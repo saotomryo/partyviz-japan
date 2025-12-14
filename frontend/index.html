@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PartyViz - 政党の立場可視化</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <p class="eyebrow">PartyViz</p>
+      <h1>公式一次情報に基づく<br>政党・政治家の立場可視化</h1>
+      <p class="lede">トピックごとに立場を比較し、根拠を確認できます。データはバックエンドAPIから取得します。</p>
+      <div class="controls">
+        <label>
+          モード
+          <select id="modeSelect">
+            <option value="claim">主張 (claim)</option>
+            <option value="action">実績 (action)</option>
+            <option value="combined">統合 (combined)</option>
+          </select>
+        </label>
+        <label>
+          対象
+          <select id="entitySelect">
+            <option value="party">政党</option>
+            <option value="party+politician">政党＋政治家</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel">
+      <div class="panel__header">
+        <h2>トピック</h2>
+      </div>
+      <ul id="topicList" class="topic-list"></ul>
+    </aside>
+
+    <section class="content">
+      <div class="content__header">
+        <div>
+          <p class="eyebrow" id="selectedTopicId">topic</p>
+          <h2 id="selectedTopicName">トピックを選択してください</h2>
+          <p class="muted" id="selectedTopicDescription">公式APIからトピックをロードします。</p>
+        </div>
+        <div class="badge" id="modeBadge">mode: claim</div>
+      </div>
+
+      <div class="positions" id="positions">
+        <p class="muted">トピックを選択するとスコアを表示します。</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="detailOverlay" class="overlay hidden">
+    <div class="overlay__dialog">
+      <button class="overlay__close" id="overlayClose">×</button>
+      <div id="detailContent"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
