@@ -10,7 +10,7 @@
 - `GEMINI_API_KEY` : Google GeminiのAPIキー
 - `DATABASE_URL`   : PostgreSQL接続文字列（psycopg v3形式）  
   例) `postgresql+psycopg://partyviz:partyviz@localhost:5432/partyviz`
-- `VITE_API_BASE`  : フロントエンドが呼び出すバックエンドAPIのURL（開発時は `http://localhost:8000`）
+- `VITE_API_BASE`  : （将来用）フロントエンドが呼び出すバックエンドAPIのURL（開発時は `http://localhost:8000`）
 - `ADMIN_API_KEY`  : 管理API用APIキー（開発時は未設定なら無認証、設定すると `X-API-Key` ヘッダ必須）
 - `USE_DUMMY_AGENTS`: `true` ならダミーエージェントを使用。`false` で実処理（LLM検索 + HTTPフェッチ + LLMスコアリング）。
 - `AGENT_SEARCH_PROVIDER` / `AGENT_SCORE_PROVIDER`: PoCで利用するプロバイダ選択（auto|gemini|openai）。
@@ -22,6 +22,9 @@
 2) 上記必須項目に値を設定
 3) バックエンド起動前に `.env` を読み込む（FastAPIは python-dotenv で自動読み込み）
 4) Alembic実行時も同一の `.env` / `DATABASE_URL` を利用
+
+## 管理UIの保存場所
+- `admin.html` の API Base / API Key / モデル名などはブラウザの localStorage に保存されます（`.env` とは別）。
 
 ## Git管理の注意
 - `.env`, `.env.*` はコミットしないでください（既に `.gitignore` に登録済み）。

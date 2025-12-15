@@ -12,7 +12,7 @@
 2. データパイプラインPoC（週2-3）  
    - Discovery/Resolution エージェントを疑似実装し、DBへcandidate/verified登録  
    - クロールは allowlist 限定のダミー実装（到達確認・メタ記録のみ）  
-   - スコアリングは固定レスポンスで「ルーブリックに沿うJSON」を生成  
+   - スコアリングは LLM + DB保存（topic_scores）まで到達（管理UIから実行可能）  
 3. スコアリング強化（週4-5）  
    - 根拠抽出と信頼度算出のロジックを実装（OpenAI/Geminiを補助利用）  
    - レンジ表示ロジック（P10-P90/中央値）を計算可能にする  
@@ -62,8 +62,8 @@
   - POST `/admin/crawl/run`
   - POST `/admin/score/run`
 - データ
-  - 当面はメモリ内のスタブデータでAPIを疎通。DBは後続で接続。
-  - evidenceはURL/quote/quote_start/quote_end/fetched_atを最低限返す。
+  - 現状はDB（topics/topic_rubrics/party_registry/score_runs/topic_scores）を利用してAPIを返す。
+  - evidenceはURL/quote（可能なら）を返し、監査可能性を優先する。
 
 ## 4. リスク・留意点
 - データソースは公式一次情報のみ。スクレイピング対象は allowlist 限定。
@@ -73,7 +73,7 @@
 
 ## 5. 直近アクション（この雛形の次）
 1) APIスキーマを確定し、Pydanticモデルを schemas.py に定義  
-2) テスト用の固定レスポンスをルータに追加し、OpenAPIを確認  
-3) DBマイグレーションツール（Alembic想定）を導入し、付録A DDLを移植  
+2) 管理UI/公開UIの導線を改善し、スコア生成→可視化までの運用手順を整備  
+3) Discovery/Resolution のイベントログ（party_discovery_events）への書き込み処理を実装  
 4) 簡易CI（lint/test）を設定  
 5) フロントエンドの技術選定とワイヤーフレーム作成

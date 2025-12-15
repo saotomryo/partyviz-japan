@@ -1,23 +1,62 @@
 # 各政党の考え方を可視化するアプリケーション
 
-仕様書に基づき、政党・政治家の立場を公式一次情報から可視化するアプリケーションの開発リポジトリです。現時点ではMVP実装に向けた計画とバックエンドの最小雛形を含みます。
+仕様書に基づき、政党・政治家の立場を公式一次情報から可視化するアプリケーションの開発リポジトリです。現時点ではMVP実装（政党レジストリ管理/ルーブリック生成/スコアリング/可視化UI）を含みます。
 
 - 仕様: 仕様書.md
 - 開発計画: docs/development-plan.md
 - バックエンド雛形: backend/
 
-## セットアップ（開発想定）
+## 必要なもの
+- Python 3.12+
+- PostgreSQL 15+（ローカルで動かす場合）
+- OpenAI APIキー or Gemini APIキー（スコアリング実行で使用）
 
+## クイックスタート（最小）
+1) `.env` を作成
+```bash
+cp .env.example .env
+```
+`.env` に `DATABASE_URL`, `ADMIN_API_KEY`, `OPENAI_API_KEY`/`GEMINI_API_KEY` を設定します（`.env` はGit管理外）。
+
+2) 依存インストール & DBマイグレーション
 ```bash
 cd backend
-pip install -r requirements.txt  # グローバル/共有の仮想環境でも可
-cp ../.env.example ../.env      # APIキーとDATABASE_URLを設定する
-uvicorn src.main:app --reload
+pip install -r requirements.txt
+alembic upgrade head
 ```
+
+3) バックエンド起動
+```bash
+cd backend
+uvicorn src.main:app --reload --port 8000
+```
+
+4) フロント起動（別ターミナル）
+```bash
+cd frontend
+python -m http.server 5173
+```
+ブラウザで `http://localhost:5173/` を開きます。
+
+## PostgreSQLセットアップ（ローカル例）
+すでに `partyviz` DB/ユーザーがある場合は読み飛ばしてください。
 
 個別設定については `docs/local-config.md` を参照し、`.env` を各自で作成してください（Git管理外）。
 
-### フロントエンド（静的Web UI）
+### macOS（Homebrew）
+```bash
+brew install postgresql@15
+brew services start postgresql@15
+
+# DB/ユーザー作成（例）
+createdb partyviz
+createuser -s partyviz
+psql -d postgres -c "ALTER USER partyviz WITH PASSWORD 'partyviz';"
+psql -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE partyviz TO partyviz;"
+```
+`.env` の `DATABASE_URL` は `.env.example` の形式に合わせてください。
+
+## フロントエンド（静的Web UI）
 ```bash
 # 別ターミナルで
 cd frontend
@@ -27,11 +66,11 @@ python -m http.server 5173
 
 バックエンドAPIが 8000 番で起動している前提です。ポートを変える場合は `frontend/app.js` の `API_BASE` を変更してください。
 
-### 管理UI（トピック/ルーブリック/政党レジストリ）
+## 管理UI（トピック/ルーブリック/政党レジストリ/スコアリング）
 
 同じ静的サーバで `http://localhost:5173/admin.html` を開き、`API Base`（例: `http://localhost:8000`）と `X-API-Key`（`ADMIN_API_KEY` を設定している場合）を入力してください。
 
-管理UIでは、検索（政党自動取得）とルーブリック生成で使うプロバイダ（OpenAI/Gemini）とモデル名も指定できます（モデル名は自由入力）。
+管理UIでは、検索（政党自動取得）とルーブリック生成/スコアリングで使うプロバイダ（OpenAI/Gemini）とモデル名も指定できます（モデル名は自由入力）。設定はブラウザの localStorage に保存されます。
 
 メインUIで実データを表示するには、管理UIで以下を行ってください:
 - トピック作成 → ルーブリック生成/有効化
@@ -41,7 +80,6 @@ python -m http.server 5173
 ## DBマイグレーション（Alembic）
 ```bash
 cd backend
-export DATABASE_URL=postgresql+psycopg://partyviz:partyviz@localhost:5432/partyviz
 alembic upgrade head
 ```
 
@@ -79,18 +117,23 @@ alembic upgrade head
 - スコアリング実行（根拠URL抽出→取得→相対スコア算出→DB保存）: `POST /admin/topics/{topic_id}/scores/run`
 - 最新スコア取得: `GET /admin/topics/{topic_id}/scores/latest`
 
-スコア機能を追加した後は、必ずマイグレーションを適用してください:
+## トラブルシュート
+- `401 Invalid API key`: `.env` の `ADMIN_API_KEY` と、管理UIの `X-API-Key` が一致しているか確認
+- `404 no score run` / 「データがありません」: 管理UIで対象トピックの「スコアリング実行」を行ったか確認
+- `psycopg OperationalError`（role does not exist 等）: `DATABASE_URL` のユーザー名/DB名が実在するか確認
+- `alembic upgrade head` が失敗: `DATABASE_URL` を `.env` に設定してから実行
 
-```bash
-cd backend
-alembic upgrade head
-```
+## GitHubに上げる前のチェック
+- `.env`, `.env.*`, `.venv/`, `backend/runs/` がコミットされていない（`.gitignore` 済み）
+- `alembic upgrade head` が通る
+- `uvicorn src.main:app --reload --port 8000` と `python -m http.server 5173` でUIが開ける
+- `http://localhost:5173/admin.html` でトピック作成→スコアリング実行→ `http://localhost:5173/` で可視化が表示される
 
 コマンドラインで実行する場合:
 
 ```bash
 cd backend
-python scripts/discover_party_registry.py --query "日本の政党 公式サイト 一覧" --limit 50
+python scripts/discover_party_registry.py --query "日本の国政政党 公式サイト 一覧 チームみらい" --limit 50
 ```
 
 ## 次ステップの例
