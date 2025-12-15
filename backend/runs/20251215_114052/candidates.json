@@ -1,0 +1,42 @@
+[
+  {
+    "name_ja": "自由民主党",
+    "candidate_url": "https://www.jimin.jp/",
+    "source": "gemini-llm-search"
+  },
+  {
+    "name_ja": "立憲民主党",
+    "candidate_url": "https://cdp-japan.jp/",
+    "source": "gemini-llm-search"
+  },
+  {
+    "name_ja": "日本維新の会",
+    "candidate_url": "https://o-ishin.jp/",
+    "source": "gemini-llm-search"
+  },
+  {
+    "name_ja": "公明党",
+    "candidate_url": "https://www.komei.or.jp/",
+    "source": "gemini-llm-search"
+  },
+  {
+    "name_ja": "国民民主党",
+    "candidate_url": "https://new-kokumin.jp/",
+    "source": "gemini-llm-search"
+  },
+  {
+    "name_ja": "日本共産党",
+    "candidate_url": "https://www.jcp.or.jp/",
+    "source": "gemini-llm-search"
+  },
+  {
+    "name_ja": "れいわ新選組",
+    "candidate_url": "https://reiwa-shinsengumi.com/",
+    "source": "gemini-llm-search"
+  },
+  {
+    "name_ja": "参政党",
+    "candidate_url": "https://www.sanseito.jp/",
+    "source": "gemini-llm-search"
+  }
+]
