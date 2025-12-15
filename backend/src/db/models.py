@@ -1,5 +1,6 @@
 from enum import Enum
 
+import sqlalchemy as sa
 from sqlalchemy import Computed, Column, Enum as PgEnum, ForeignKey, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, UUID
 from sqlalchemy.types import LargeBinary
@@ -26,6 +27,42 @@ class EvidenceType(str, Enum):
     official_site_self_declare = "official_site_self_declare"
     manual_review = "manual_review"
 
+
+class RubricStatus(str, Enum):
+    draft = "draft"
+    active = "active"
+    archived = "archived"
+
+
+class Topic(Base):
+    __tablename__ = "topics"
+
+    topic_id = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+
+
+class TopicRubric(Base):
+    __tablename__ = "topic_rubrics"
+
+    rubric_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    topic_id = Column(Text, ForeignKey("topics.topic_id", ondelete="CASCADE"), nullable=False)
+    version = Column(sa.Integer, nullable=False, server_default=text("1"))
+    status = Column(PgEnum(RubricStatus, name="rubric_status", create_type=False), nullable=False, server_default=text("'draft'::rubric_status"))
+
+    axis_a_label = Column(Text, nullable=False)
+    axis_b_label = Column(Text, nullable=False)
+    steps = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+
+    generated_by = Column(Text)
+    llm_provider = Column(Text)
+    llm_model = Column(Text)
+    prompt_version = Column(Text)
+
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
 
 class PartyRegistry(Base):
     __tablename__ = "party_registry"

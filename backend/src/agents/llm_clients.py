@@ -6,20 +6,14 @@ from typing import List
 import google.generativeai as genai
 import httpx
 from openai import OpenAI
-import os
+
+from .prompting import load_prompt
+from .json_parse import parse_json
 
 from .base import LLMClient, PartyDocs, ScoreResult
 
 
-SYSTEM_PROMPT = """あなたは政策ポジションを比較評価するアナリストです。
-各政党の政策ドキュメントを読み、指定トピックについて相対的にスコアを付与してください。
-
-- stance_label: support / oppose / conditional / not_mentioned / unknown
-- stance_score: -100〜+100（相対評価、中心0）
-- confidence: 0〜1
-- rationale: 簡潔な根拠
-- evidence_url: 根拠となるURL
-"""
+SYSTEM_PROMPT = load_prompt("score_relative_openai.txt")
 
 
 def build_payload(topic: str, party_docs: List[PartyDocs], *, max_docs_per_party: int = 3, max_chars: int = 4000) -> str:
@@ -63,7 +57,7 @@ class OpenAILLMClient(LLMClient):
         )
         text = response.choices[0].message.content or "[]"
         try:
-            data = json.loads(text)
+            data = parse_json(text)
         except Exception:
             # モデルの応答がJSONでない場合は空を返す
             return []
@@ -107,7 +101,7 @@ class GeminiLLMClient(LLMClient):
         resp = model.generate_content(prompt)
         text = resp.text or "[]"
         try:
-            data = json.loads(text)
+            data = parse_json(text)
         except Exception:
             return []
 

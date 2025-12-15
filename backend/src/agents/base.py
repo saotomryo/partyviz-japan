@@ -18,6 +18,19 @@ class SearchClient(Protocol):
         ...
 
 
+class PolicyEvidenceClient(Protocol):
+    """Web検索/groundingにより、公式ドメイン内の根拠URLと抜粋を返す。"""
+
+    def find_policy_evidence_bulk(
+        self,
+        *,
+        topic: str,
+        parties: List["ResolvedParty"],
+        max_per_party: int = 3,
+    ) -> List["PolicyEvidence"]:
+        ...
+
+
 class LLMClient(Protocol):
     """スコア生成用のLLMクライアント抽象。"""
 
@@ -59,6 +72,18 @@ class ScoreResult:
 class PartyDocs:
     party_name: str
     docs: List[PolicyDocument]
+
+
+@dataclass
+class EvidenceSnippet:
+    evidence_url: str
+    quote: str
+
+
+@dataclass
+class PolicyEvidence:
+    party_name: str
+    evidence: List[EvidenceSnippet]
 
 
 def extract_domain(url: str) -> str:

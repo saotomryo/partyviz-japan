@@ -135,3 +135,68 @@ class TopicDetailResponse(BaseModel):
 class AdminJobResponse(BaseModel):
     status: str = "queued"
     detail: str
+
+
+class RubricStatusEnum(str, Enum):
+    draft = "draft"
+    active = "active"
+    archived = "archived"
+
+
+class RubricStep(BaseModel):
+    score: int = Field(..., ge=-100, le=100)
+    label: str
+    criteria: str
+
+
+class TopicCreate(BaseModel):
+    topic_id: str
+    name: str
+    description: Optional[str] = None
+
+
+class TopicRubricCreate(BaseModel):
+    axis_a_label: str
+    axis_b_label: str
+    steps: List[RubricStep]
+    status: RubricStatusEnum = RubricStatusEnum.draft
+
+
+class TopicRubricUpdate(BaseModel):
+    axis_a_label: Optional[str] = None
+    axis_b_label: Optional[str] = None
+    steps: Optional[List[RubricStep]] = None
+    status: Optional[RubricStatusEnum] = None
+
+
+class TopicRubricResponse(BaseModel):
+    rubric_id: uuid.UUID
+    topic_id: str
+    version: int
+    status: RubricStatusEnum
+    axis_a_label: str
+    axis_b_label: str
+    steps: List[RubricStep]
+    generated_by: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    prompt_version: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TopicRubricGenerateRequest(BaseModel):
+    topic_name: str
+    description: Optional[str] = None
+    # 軸のヒント（任意）
+    axis_a_hint: Optional[str] = None
+    axis_b_hint: Optional[str] = None
+    # 生成する段階数（推奨: 5）
+    steps_count: int = Field(default=5, ge=3, le=9)
+
+
+class TopicRubricGenerateResponse(BaseModel):
+    topic: TopicCreate
+    rubric: TopicRubricResponse

@@ -13,6 +13,8 @@
 - `VITE_API_BASE`  : フロントエンドが呼び出すバックエンドAPIのURL（開発時は `http://localhost:8000`）
 - `ADMIN_API_KEY`  : 管理API用APIキー（開発時は未設定なら無認証、設定すると `X-API-Key` ヘッダ必須）
 - `USE_DUMMY_AGENTS`: `true` ならダミーエージェントを使用。`false` で実処理（LLM検索 + HTTPフェッチ + LLMスコアリング）。
+- `AGENT_SEARCH_PROVIDER` / `AGENT_SCORE_PROVIDER`: PoCで利用するプロバイダ選択（auto|gemini|openai）。
+- `OPENAI_SEARCH_MODEL` / `OPENAI_SCORE_MODEL` / `GEMINI_SEARCH_MODEL` / `GEMINI_SCORE_MODEL`: PoCのモデル指定。
 
 ## 手順
 1) ルートにある `.env.example` をコピーして `.env` を作成  

@@ -43,6 +43,25 @@ alembic upgrade head
 - 管理API: `ADMIN_API_KEY` を設定すると `X-API-Key` ヘッダで保護（未設定時は開発用として無認証）
 - エージェントPoC: `backend/scripts/agent_poc.py` で Discovery→Resolution→Crawler→相対スコア算出を通し検証可能（OpenAI/Geminiキーがあれば実LLMで実行）
 - 依存追加が必要な場合はネットワーク制約に注意（bs4は未使用化済み）
+- コスト見積もり: `docs/cost-estimate.md`
+- ルーブリック（スコア表）: `topic_rubrics` テーブルに保存、生成AIでドラフト生成→人が編集→有効化（管理API）
+
+## ルーブリック（スコア表）管理（Admin API）
+
+マイグレーション適用後に利用できます。
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+例（APIキー認証が有効な場合は `-H "X-API-Key: ..."` を付与）:
+
+- トピック登録/更新: `PUT /admin/topics/{topic_id}`
+- ルーブリック生成（ドラフトをDBに保存）: `POST /admin/topics/{topic_id}/rubrics/generate`
+- ルーブリック一覧: `GET /admin/topics/{topic_id}/rubrics`
+- ルーブリック編集: `PATCH /admin/rubrics/{rubric_id}`
+- ルーブリック有効化（同topicのactiveはarchivedへ）: `POST /admin/rubrics/{rubric_id}/activate`
 
 ## 次ステップの例
 - docs/development-plan.md に従い、APIのスキーマとDBマイグレーションを実装

@@ -2,60 +2,248 @@ from __future__ import annotations
 
 import json
 from typing import List
+from urllib.parse import urlparse
 
 import google.generativeai as genai
 import httpx
 from openai import OpenAI
 
-from .base import DiscoveryCandidate
-from ..settings import settings
+from .base import DiscoveryCandidate, EvidenceSnippet, PolicyEvidence, ResolvedParty
+from .json_parse import parse_json
+from .prompting import load_prompt
 
-SYSTEM_PROMPT_SEARCH = """あなたは公的情報を優先するリサーチャーです。
-日本の政党の公式サイトURLを推定し、政党名とURLをJSON配列で返してください。
-- 公式サイトを優先してください。Wikipediaやまとめサイトは除外。
-- レスポンスは JSON のみ (例: [{"name_ja":"政党X","url":"https://example.jp"}])
-"""
+SYSTEM_PROMPT_SEARCH = load_prompt("party_discovery_openai.txt")
+SYSTEM_PROMPT_EVIDENCE = load_prompt("policy_evidence_bulk_openai.txt")
 
 
 class OpenAILLMSearchClient:
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
-        http_client = httpx.Client(timeout=30, follow_redirects=True)
-        self.client = OpenAI(api_key=api_key, http_client=http_client)
+    """
+    OpenAIの検索対応モデル（例: gpt-4o-mini-search-preview）を用いて、
+    党公式URLの推定と、公式ドメイン内の政策根拠URL抽出を行う。
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-mini-search-preview",
+        search_context_size: str = "high",
+        debug: bool = False,
+        timeout_sec: int = 120,
+    ):
+        self.http_client = httpx.Client(timeout=timeout_sec, follow_redirects=True)
+        self.client = OpenAI(api_key=api_key, http_client=self.http_client)
+        self.api_key = api_key
         self.model = model
+        self.search_context_size = search_context_size
+        self.debug = debug
+        self.last_raw_text: str | None = None
+        self.last_error: str | None = None
+        self.last_discovery_query: str | None = None
+        self.last_evidence_payload: dict | None = None
+        self.last_used: str | None = None  # "responses" | "chat"
+
+    def _responses_web_search(self, *, system: str, user: str) -> str:
+        """
+        OpenAI Responses API をHTTPで直接叩いて web_search_preview を使う。
+        SDKバージョン差異で chat.completions に web_search_options を渡せないケースの回避策。
+        """
+        url = "https://api.openai.com/v1/responses"
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+        # まずは現在のResponses APIで一般的な形を試す
+        payload = {
+            "model": self.model,
+            "input": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "tools": [{"type": "web_search_preview"}],
+            "tool_choice": "auto",
+        }
+
+        if self.debug:
+            print("[openai.responses] request model=", self.model)
+        r = self.http_client.post(url, headers=headers, json=payload, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+
+        # output_text があればそれを優先
+        if isinstance(data, dict):
+            text = data.get("output_text")
+            if isinstance(text, str) and text.strip():
+                self.last_raw_text = text
+                return text
+
+            # output配列からテキストを寄せ集める
+            out = data.get("output")
+            if isinstance(out, list):
+                parts: list[str] = []
+                for item in out:
+                    if not isinstance(item, dict):
+                        continue
+                    content = item.get("content")
+                    if isinstance(content, list):
+                        for c in content:
+                            if isinstance(c, dict) and isinstance(c.get("text"), str):
+                                parts.append(c["text"])
+                if parts:
+                    joined = "\n".join(parts)
+                    self.last_raw_text = joined
+                    return joined
+
+        return ""
 
     def search_parties(self, query: str) -> List[DiscoveryCandidate]:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT_SEARCH},
-            {"role": "user", "content": f"クエリ: {query}\n政党名と公式URLを返してください。"},
-        ]
-        resp = self.client.chat.completions.create(model=self.model, messages=messages)
-        text = resp.choices[0].message.content or "[]"
+        self.last_discovery_query = query
+        # 可能ならResponses API + web_search_previewを使う
         try:
-            data = json.loads(text)
+            self.last_error = None
+            self.last_used = "responses"
+            text = self._responses_web_search(system=SYSTEM_PROMPT_SEARCH, user=f"クエリ: {query}") or "[]"
+        except Exception as e:
+            self.last_error = f"responses_web_search failed ({type(e).__name__}: {e}); fallback to chat.completions"
+            self.last_used = "chat"
+            # フォールバック: 通常のChat Completions（検索なし、URLハルシネーションの可能性あり）
+            try:
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT_SEARCH},
+                    {"role": "user", "content": f"クエリ: {query}"},
+                ]
+                resp = self.client.chat.completions.create(model=self.model, messages=messages)
+                text = resp.choices[0].message.content or "[]"
+                self.last_raw_text = text
+            except Exception as e2:
+                self.last_error = f"{self.last_error}; chat.completions failed ({type(e2).__name__}: {e2})"
+                return []
+        try:
+            data = parse_json(text)
         except Exception:
             return []
+
         results: List[DiscoveryCandidate] = []
         for item in data:
-            url = item.get("url") or item.get("official_url")
-            name = item.get("name_ja") or item.get("name") or item.get("party")
+            url = item.get("official_url") or item.get("url")
+            name = item.get("name_ja") or item.get("party_name") or item.get("name")
             if not url or not name:
                 continue
-            results.append(DiscoveryCandidate(name_ja=name, candidate_url=url, source="openai-llm-search"))
+            results.append(DiscoveryCandidate(name_ja=name, candidate_url=url, source="openai-web-search"))
+        return results
+
+    def find_policy_evidence_bulk(
+        self,
+        *,
+        topic: str,
+        parties: List[ResolvedParty],
+        max_per_party: int = 3,
+    ) -> List[PolicyEvidence]:
+        party_payload = [
+            {"party_name": p.name_ja, "official_url": p.official_url, "domain": urlparse(p.official_url).netloc}
+            for p in parties
+        ]
+        self.last_evidence_payload = {"topic": topic, "parties": party_payload, "max_per_party": max_per_party}
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT_EVIDENCE},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {"topic": topic, "parties": party_payload, "max_per_party": max_per_party},
+                    ensure_ascii=False,
+                ),
+            },
+        ]
+        try:
+            self.last_error = None
+            self.last_used = "responses"
+            text = (
+                self._responses_web_search(system=SYSTEM_PROMPT_EVIDENCE, user=messages[1]["content"]) or "[]"
+            )
+        except Exception as e:
+            self.last_error = f"responses_web_search failed ({type(e).__name__}: {e}); fallback to chat.completions"
+            self.last_used = "chat"
+            try:
+                resp = self.client.chat.completions.create(model=self.model, messages=messages)
+                text = resp.choices[0].message.content or "[]"
+                self.last_raw_text = text
+            except Exception as e2:
+                self.last_error = f"{self.last_error}; chat.completions failed ({type(e2).__name__}: {e2})"
+                return []
+        try:
+            data = parse_json(text)
+        except Exception:
+            return []
+
+        results: List[PolicyEvidence] = []
+        for item in data:
+            party_name = item.get("party_name") or ""
+            evidence_items = []
+            for ev in item.get("evidence", []) or []:
+                url = ev.get("evidence_url") or ev.get("url")
+                quote = ev.get("quote") or ""
+                if url:
+                    evidence_items.append(EvidenceSnippet(evidence_url=url, quote=quote))
+            results.append(PolicyEvidence(party_name=party_name, evidence=evidence_items))
         return results
 
 
 class GeminiLLMSearchClient:
-    def __init__(self, api_key: str, model: str = "models/gemini-1.5-flash"):
-        genai.configure(api_key=api_key)
-        self.model = model
+    """
+    Gemini Developer API の Grounding with Google Search を使う検索クライアント。
+
+    現在の `google-generativeai` SDK(v0.8.x) だと `google_search_retrieval` を使う実装になるが、
+    実API側が `google_search` ツールを要求するケースがあるため、HTTPで直接 `google_search` tool を呼ぶ。
+    """
+
+    def __init__(self, api_key: str, model: str = "models/gemini-1.5-flash", debug: bool = False):
+        self.api_key = api_key
+        self.model = model if model.startswith("models/") else f"models/{model}"
+        self.debug = debug
+        self.last_raw_text: str | None = None
+        self.last_discovery_query: str | None = None
+        self.last_evidence_payload: dict | None = None
+        self.last_error: str | None = None
+        self.http_client = httpx.Client(timeout=120, follow_redirects=True)
+
+    def _generate_grounded(self, prompt: str) -> str:
+        """
+        Grounding with Google Search: tools=[{"google_search":{}}]
+        """
+        url = f"https://generativelanguage.googleapis.com/v1beta/{self.model}:generateContent"
+        params = {"key": self.api_key}
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "tools": [{"google_search": {}}],
+        }
+        r = self.http_client.post(url, params=params, json=payload)
+        r.raise_for_status()
+        data = r.json()
+        # candidates[0].content.parts[].text を連結
+        candidates = data.get("candidates") if isinstance(data, dict) else None
+        if not candidates:
+            return ""
+        parts = candidates[0].get("content", {}).get("parts", [])
+        texts = [p.get("text", "") for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str)]
+        return "\n".join([t for t in texts if t]).strip()
+
+    def _generate_plain(self, prompt: str) -> str:
+        genai.configure(api_key=self.api_key)
+        model = genai.GenerativeModel(self.model)
+        resp = model.generate_content(prompt)
+        return (resp.text or "").strip()
 
     def search_parties(self, query: str) -> List[DiscoveryCandidate]:
-        model = genai.GenerativeModel(self.model)
-        prompt = f"{SYSTEM_PROMPT_SEARCH}\nクエリ: {query}\n政党名と公式URLを返してください。"
-        resp = model.generate_content(prompt)
-        text = resp.text or "[]"
+        self.last_discovery_query = query
+        prompt = f"{SYSTEM_PROMPT_SEARCH}\nクエリ: {query}"
         try:
-            data = json.loads(text)
+            self.last_error = None
+            text = self._generate_grounded(prompt) or "[]"
+        except Exception as e:
+            self.last_error = f"grounded generateContent failed ({type(e).__name__}: {e}); fallback to plain"
+            text = self._generate_plain(prompt) or "[]"
+        self.last_raw_text = text
+        if self.debug:
+            print("[gemini.search] raw:", text[:400])
+        try:
+            data = parse_json(text)
         except Exception:
             return []
         results: List[DiscoveryCandidate] = []
@@ -65,4 +253,45 @@ class GeminiLLMSearchClient:
             if not url or not name:
                 continue
             results.append(DiscoveryCandidate(name_ja=name, candidate_url=url, source="gemini-llm-search"))
+        return results
+
+    def find_policy_evidence_bulk(
+        self,
+        *,
+        topic: str,
+        parties: List[ResolvedParty],
+        max_per_party: int = 3,
+    ) -> List[PolicyEvidence]:
+        party_payload = [
+            {"party_name": p.name_ja, "official_url": p.official_url, "domain": urlparse(p.official_url).netloc}
+            for p in parties
+        ]
+        self.last_evidence_payload = {"topic": topic, "parties": party_payload, "max_per_party": max_per_party}
+        prompt = (
+            f"{SYSTEM_PROMPT_EVIDENCE}\n"
+            + json.dumps({"topic": topic, "parties": party_payload, "max_per_party": max_per_party}, ensure_ascii=False)
+        )
+        try:
+            self.last_error = None
+            text = self._generate_grounded(prompt) or "[]"
+        except Exception as e:
+            self.last_error = f"grounded generateContent failed ({type(e).__name__}: {e}); fallback to plain"
+            text = self._generate_plain(prompt) or "[]"
+        self.last_raw_text = text
+        if self.debug:
+            print("[gemini.evidence] raw:", text[:400])
+        try:
+            data = parse_json(text)
+        except Exception:
+            return []
+        results: List[PolicyEvidence] = []
+        for item in data:
+            party_name = item.get("party_name") or ""
+            evidence_items = []
+            for ev in item.get("evidence", []) or []:
+                url = ev.get("evidence_url") or ev.get("url")
+                quote = ev.get("quote") or ""
+                if url:
+                    evidence_items.append(EvidenceSnippet(evidence_url=url, quote=quote))
+            results.append(PolicyEvidence(party_name=party_name, evidence=evidence_items))
         return results
