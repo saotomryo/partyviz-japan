@@ -17,17 +17,20 @@
           モード
           <select id="modeSelect">
             <option value="claim">主張 (claim)</option>
-            <option value="action">実績 (action)</option>
-            <option value="combined">統合 (combined)</option>
+            <option value="action" disabled>実績 (action) - 未実装</option>
+            <option value="combined" disabled>統合 (combined) - 未実装</option>
           </select>
         </label>
         <label>
           対象
           <select id="entitySelect">
             <option value="party">政党</option>
-            <option value="party+politician">政党＋政治家</option>
+            <option value="party+politician" disabled>政党＋政治家 - 未実装</option>
           </select>
         </label>
+        <div style="align-self:flex-end;">
+          <a class="button-link" href="admin.html">管理UI</a>
+        </div>
       </div>
     </div>
   </header>

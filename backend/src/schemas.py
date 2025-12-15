@@ -40,6 +40,7 @@ class ScoreMeta(BaseModel):
 class ScoreItem(BaseModel):
     entity_type: Literal["party", "politician"]
     entity_id: str
+    entity_name: Optional[str] = None
     topic_id: str
     mode: Literal["claim", "action", "combined"]
     stance_label: Literal["support", "oppose", "conditional", "unknown", "not_mentioned"]
@@ -114,6 +115,88 @@ class PartyResponse(PartyBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PartyUpdate(BaseModel):
+    name_ja: Optional[str] = None
+    name_en: Optional[str] = None
+    official_home_url: Optional[str] = None
+    allowed_domains: Optional[List[str]] = None
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    status: Optional[PartyStatusEnum] = None
+    evidence: Optional[Any] = None
+
+
+class PartyRegistryDiscoverRequest(BaseModel):
+    query: str = Field(
+        default="日本の国政政党（国会に議席のある政党）と主要な新党・政治団体の公式サイト一覧 チームみらい",
+    )
+    limit: int = Field(default=50, ge=1, le=200)
+    provider: Literal["auto", "gemini", "openai"] = "auto"
+    openai_model: Optional[str] = None
+    gemini_model: Optional[str] = None
+    dry_run: bool = False
+
+
+class PartyRegistryDiscoverItem(BaseModel):
+    action: Literal["created", "updated", "skipped"]
+    name_ja: str
+    official_home_url: str | None = None
+
+
+class PartyRegistryDiscoverResponse(BaseModel):
+    query: str
+    provider: str
+    found: int
+    created: int
+    updated: int
+    skipped: int
+    results: List[PartyRegistryDiscoverItem]
+
+
+class AdminPurgeRequest(BaseModel):
+    targets: List[Literal["parties", "topics", "events", "all"]] = Field(default_factory=lambda: ["all"])
+    confirm: str
+    dry_run: bool = False
+
+
+class AdminPurgeResponse(BaseModel):
+    deleted: dict[str, int]
+
+
+class TopicScoreRunRequest(BaseModel):
+    topic_text: Optional[str] = None
+    search_provider: Literal["auto", "gemini", "openai"] = "auto"
+    score_provider: Literal["auto", "gemini", "openai"] = "auto"
+    search_openai_model: Optional[str] = None
+    search_gemini_model: Optional[str] = None
+    score_openai_model: Optional[str] = None
+    score_gemini_model: Optional[str] = None
+    max_parties: int = Field(default=10, ge=1, le=100)
+    max_evidence_per_party: int = Field(default=2, ge=1, le=5)
+
+
+class TopicScoreItem(BaseModel):
+    party_id: uuid.UUID
+    name_ja: str
+    stance_label: str
+    stance_score: int
+    confidence: float
+    rationale: str
+    evidence_url: Optional[str] = None
+    evidence_quote: Optional[str] = None
+
+
+class TopicScoreRunResponse(BaseModel):
+    run_id: uuid.UUID
+    topic_id: str
+    created_at: Optional[datetime] = None
+    search_provider: Optional[str] = None
+    search_model: Optional[str] = None
+    score_provider: Optional[str] = None
+    score_model: Optional[str] = None
+    scores: List[TopicScoreItem]
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TopicsResponse(BaseModel):
     topics: List[Topic]
 
@@ -122,6 +205,9 @@ class TopicPositionsResponse(BaseModel):
     topic: Topic
     mode: Literal["claim", "action", "combined"]
     entity: Literal["party", "party+politician"]
+    rubric_version: Optional[int] = None
+    axis_a_label: Optional[str] = None
+    axis_b_label: Optional[str] = None
     scores: List[ScoreItem]
 
 
@@ -129,6 +215,9 @@ class TopicDetailResponse(BaseModel):
     topic: Topic
     mode: Literal["claim", "action", "combined"]
     entity_id: str
+    rubric_version: Optional[int] = None
+    axis_a_label: Optional[str] = None
+    axis_b_label: Optional[str] = None
     score: ScoreItem
 
 
@@ -153,6 +242,14 @@ class TopicCreate(BaseModel):
     topic_id: str
     name: str
     description: Optional[str] = None
+
+
+class TopicCreateRequest(BaseModel):
+    """topic_id を省略したトピック作成用（管理UI向け）。"""
+
+    name: str
+    description: Optional[str] = None
+    topic_id: Optional[str] = None
 
 
 class TopicRubricCreate(BaseModel):
@@ -190,6 +287,9 @@ class TopicRubricResponse(BaseModel):
 class TopicRubricGenerateRequest(BaseModel):
     topic_name: str
     description: Optional[str] = None
+    provider: Literal["auto", "gemini", "openai"] = "auto"
+    openai_model: Optional[str] = None
+    gemini_model: Optional[str] = None
     # 軸のヒント（任意）
     axis_a_hint: Optional[str] = None
     axis_b_hint: Optional[str] = None

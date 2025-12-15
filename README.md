@@ -27,6 +27,17 @@ python -m http.server 5173
 
 バックエンドAPIが 8000 番で起動している前提です。ポートを変える場合は `frontend/app.js` の `API_BASE` を変更してください。
 
+### 管理UI（トピック/ルーブリック/政党レジストリ）
+
+同じ静的サーバで `http://localhost:5173/admin.html` を開き、`API Base`（例: `http://localhost:8000`）と `X-API-Key`（`ADMIN_API_KEY` を設定している場合）を入力してください。
+
+管理UIでは、検索（政党自動取得）とルーブリック生成で使うプロバイダ（OpenAI/Gemini）とモデル名も指定できます（モデル名は自由入力）。
+
+メインUIで実データを表示するには、管理UIで以下を行ってください:
+- トピック作成 → ルーブリック生成/有効化
+- 政党レジストリを作成（自動取得 or 手動登録）し `official_home_url` を埋める
+- 「スコアリング実行」でスコアをDB保存
+
 ## DBマイグレーション（Alembic）
 ```bash
 cd backend
@@ -62,6 +73,25 @@ alembic upgrade head
 - ルーブリック一覧: `GET /admin/topics/{topic_id}/rubrics`
 - ルーブリック編集: `PATCH /admin/rubrics/{rubric_id}`
 - ルーブリック有効化（同topicのactiveはarchivedへ）: `POST /admin/rubrics/{rubric_id}/activate`
+- 政党レジストリ自動取得（LLM検索→DBへupsert）: `POST /admin/parties/discover`
+- 政党の個別編集: `PATCH /admin/parties/{party_id}`（管理UIで一覧から選択→編集）
+- 開発用データ削除（危険、`confirm=DELETE` 必須、`ADMIN_API_KEY` 必須）: `POST /admin/dev/purge`
+- スコアリング実行（根拠URL抽出→取得→相対スコア算出→DB保存）: `POST /admin/topics/{topic_id}/scores/run`
+- 最新スコア取得: `GET /admin/topics/{topic_id}/scores/latest`
+
+スコア機能を追加した後は、必ずマイグレーションを適用してください:
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+コマンドラインで実行する場合:
+
+```bash
+cd backend
+python scripts/discover_party_registry.py --query "日本の政党 公式サイト 一覧" --limit 50
+```
 
 ## 次ステップの例
 - docs/development-plan.md に従い、APIのスキーマとDBマイグレーションを実装

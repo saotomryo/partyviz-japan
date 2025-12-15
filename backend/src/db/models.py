@@ -129,3 +129,38 @@ class PartyChangeHistory(Base):
     after_state = Column(JSONB, nullable=False)
     reason = Column(Text)
     evidence = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+
+
+class ScoreRun(Base):
+    __tablename__ = "score_runs"
+
+    run_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    topic_id = Column(Text, ForeignKey("topics.topic_id", ondelete="CASCADE"), nullable=False)
+
+    search_provider = Column(Text)
+    search_model = Column(Text)
+    score_provider = Column(Text)
+    score_model = Column(Text)
+
+    meta = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+
+
+class TopicScore(Base):
+    __tablename__ = "topic_scores"
+
+    score_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_id = Column(UUID(as_uuid=True), ForeignKey("score_runs.run_id", ondelete="CASCADE"), nullable=False)
+    topic_id = Column(Text, ForeignKey("topics.topic_id", ondelete="CASCADE"), nullable=False)
+    party_id = Column(UUID(as_uuid=True), ForeignKey("party_registry.party_id", ondelete="CASCADE"), nullable=False)
+
+    stance_label = Column(Text, nullable=False)
+    stance_score = Column(sa.Integer, nullable=False)
+    confidence = Column(Numeric(4, 3), nullable=False, server_default=text("0.000"))
+    rationale = Column(Text, nullable=False, server_default=text("''"))
+
+    evidence_url = Column(Text)
+    evidence_quote = Column(Text)
+    evidence = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
