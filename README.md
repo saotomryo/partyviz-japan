@@ -191,3 +191,6 @@ python scripts/discover_party_registry.py --query "日本の国政政党 公式�
 - docs/development-plan.md に従い、APIのスキーマとDBマイグレーションを実装
 - データパイプライン（Discovery/Resolution/Crawl/Score）の実装着手
 - フロントエンドのUIプロトタイプ作成
+
+## ライセンス
+MIT License（`LICENSE` を参照）
