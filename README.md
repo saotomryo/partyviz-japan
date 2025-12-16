@@ -80,21 +80,8 @@ python -m http.server 5173
 
 ## UI操作方法（現時点）
 
-- メインUI
-![メインUI](JPG/mainUI.jpg) 
-![メインUI](JPG/mainUI2.jpg)
-![メインUI](JPG/mainUI3.jpg)
-
-- 管理UI
-![管理UI](JPG/adminUI1.jpg) 
-![管理UI](JPG/adminUI2.jpg) 
-![管理UI](JPG/adminUI3.jpg) 
-![管理UI](JPG/adminUI4.jpg)
-
-
-
 ### 1) 管理UI（`/admin.html`）
-（画像が必要: 管理UIのトップ画面）
+![管理UI](JPG/adminUI1.jpg) 
 
 **A. 初期設定**
 1. `API Base` にバックエンドURL（例: `http://localhost:8000`）を入力
@@ -102,18 +89,17 @@ python -m http.server 5173
 3. 「API設定を保存」を押す
 
 **B. LLM設定（任意）**
-（画像が必要: LLMモデル設定セクション）
 1. 「検索プロバイダ」「ルーブリック生成プロバイダ」を選択（`auto|gemini|openai`）
 2. OpenAI/Geminiのモデル名を入力（候補から選択または自由入力）
 3. 「LLM設定を保存」を押す
 
 **C. トピック作成**
-（画像が必要: トピック作成フォーム + トピック一覧）
 1. `name` と `description` を入力（`topic_id` は空でもOK）
 2. 「追加/更新」を押す
 
 **D. ルーブリック生成 → 有効化**
-（画像が必要: ルーブリック生成セクション + ルーブリック一覧）
+![管理UI](JPG/adminUI2.jpg) 
+![管理UI](JPG/adminUI3.jpg) 
 1. トピックを選択
 2. 「ルーブリック生成（ドラフト）」で必要なら `axis` ヒントや `steps_count` を入力
 3. 「生成して保存（POST）」を押す
@@ -121,20 +107,21 @@ python -m http.server 5173
 5. 「Activate（POST）」で有効化（同一トピックの既存activeはarchivedへ）
 
 **E. 政党レジストリ（自動取得/手動/編集）**
-（画像が必要: 政党レジストリセクション）
+![管理UI](JPG/adminUI4.jpg)
 - 自動取得: 「自動取得クエリ」を必要に応じて調整 → 「自動取得して反映」
 - 手動登録: `name_ja` / `official_home_url` / `allowed_domains` 等を入力 → 「登録（POST）」
 - 個別編集: 一覧の政党をクリック → フォームに反映 → `official_home_url` や `evidence(JSON)` を編集 → 「更新（PATCH）」
 
 **F. スコアリング（実行 & 保存）**
-（画像が必要: スコアリングセクション）
 1. トピックを選択
 2. `max_parties` / `max_evidence_per_party` を調整（必要なら）
 3. 「スコアリング実行」を押す（根拠URL抽出→取得→相対スコア算出→DB保存）
 4. 「最新スコア表示」で最新結果を確認
 
 ### 2) メインUI（`/`）
-（画像が必要: メインUIのトップ画面）
+![メインUI](JPG/mainUI.jpg) 
+![メインUI](JPG/mainUI2.jpg)
+![メインUI](JPG/mainUI3.jpg)
 1. 左の「トピック」一覧から対象トピックを選択
 2. 上部の軸ラベル（-100/+100）を確認して、各政党の位置を把握
 3. 軸上の点、または各政党行の点をクリックすると、根拠（フルURL）を含む詳細オーバーレイを表示
