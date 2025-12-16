@@ -6,6 +6,9 @@
 - 開発計画: docs/development-plan.md
 - バックエンド雛形: backend/
 
+## 解説記事
+https://zenn.dev/ryo_saotome/articles/4bb384dfd438fe
+
 ## 必要なもの
 - Python 3.12+
 - PostgreSQL 15+（ローカルで動かす場合）
