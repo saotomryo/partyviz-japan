@@ -16,6 +16,7 @@ from ..agents.scorer import ScoringAgent
 from ..agents.text_extract import html_to_text
 from ..db import models
 from ..settings import settings
+from . import topic_rubrics
 
 
 def _now_iso() -> str:
@@ -93,6 +94,21 @@ def run_topic_scoring(
     topic = db.get(models.Topic, topic_id)
     if not topic:
         raise ValueError("topic not found")
+
+    rubric = topic_rubrics.get_active_rubric(db, topic_id) if hasattr(topic_rubrics, "get_active_rubric") else None
+    if rubric is None:
+        # topic_rubrics モジュール側に関数が無い場合はDBから直接取る
+        rubric = db.scalar(
+            select(models.TopicRubric)
+            .where(models.TopicRubric.topic_id == topic_id, models.TopicRubric.status == "active")
+            .order_by(models.TopicRubric.version.desc())
+            .limit(1)
+        ) or db.scalar(
+            select(models.TopicRubric)
+            .where(models.TopicRubric.topic_id == topic_id)
+            .order_by(models.TopicRubric.version.desc())
+            .limit(1)
+        )
 
     parties: list[models.PartyRegistry] = list(
         db.scalars(
@@ -194,7 +210,16 @@ def run_topic_scoring(
     }
 
     agent = ScoringAgent(llm_client=score_client)
-    results = agent.score(topic=topic_text, party_docs=party_docs)
+    topic_payload = {"topic_name": topic_text}
+    if rubric is not None:
+        topic_payload["rubric"] = {
+            "topic_id": topic_id,
+            "rubric_version": getattr(rubric, "version", None),
+            "axis_a_label": getattr(rubric, "axis_a_label", None),
+            "axis_b_label": getattr(rubric, "axis_b_label", None),
+            "steps": getattr(rubric, "steps", None),
+        }
+    results = agent.score(topic=topic_payload, party_docs=party_docs)  # type: ignore[arg-type]
 
     run = models.ScoreRun(
         topic_id=topic_id,

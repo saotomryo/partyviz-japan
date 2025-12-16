@@ -106,10 +106,8 @@ function renderPositions(data) {
     return;
   }
 
-  // 既存のスコアリング定義とルーブリックの向きがズレるケースがあるため、
-  // UI上では左右の軸ラベルを入れ替えて表示する（スコアの符号はそのまま）。
-  const leftLabel = axis_b_label || "Axis A (-100)";
-  const rightLabel = axis_a_label || "Axis B (+100)";
+  const leftLabel = axis_a_label || "Axis (-100)";
+  const rightLabel = axis_b_label || "Axis (+100)";
 
   const colorMap = buildPartyColorMap(scores);
 
@@ -230,7 +228,7 @@ function renderDetail(data) {
 
   const axisInfo =
     data.axis_a_label && data.axis_b_label
-      ? `<p class="muted">-100: ${data.axis_b_label} / +100: ${data.axis_a_label}</p>`
+      ? `<p class="muted">-100: ${data.axis_a_label} / +100: ${data.axis_b_label}</p>`
       : "";
 
   detailContentEl.innerHTML = `

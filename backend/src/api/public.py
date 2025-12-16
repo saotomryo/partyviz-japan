@@ -54,15 +54,45 @@ def get_topic_positions(
     )
 
     party_map = {p.party_id: p for p in db.scalars(select(models.PartyRegistry))}
+    score_by_party_id = {s.party_id: s for s in scores}
+
     items: list[ScoreItem] = []
-    for s in scores:
-        p = party_map.get(s.party_id)
+    for party_id, party in party_map.items():
+        s = score_by_party_id.get(party_id)
+        if not s:
+            items.append(
+                ScoreItem(
+                    entity_type="party",
+                    entity_id=str(party_id),
+                    entity_name=party.name_ja,
+                    topic_id=topic_id,
+                    mode="claim",
+                    stance_label="not_mentioned",
+                    stance_score=0,
+                    confidence=0.0,
+                    rationale="スコア未作成（管理UIでスコアリング実行）",
+                    evidence=[
+                        Evidence(
+                            url=party.official_home_url or "",
+                            fetched_at=(run.created_at or datetime.now(timezone.utc)),
+                            quote="",
+                            quote_start=0,
+                            quote_end=0,
+                        )
+                    ]
+                    if party.official_home_url
+                    else [],
+                    meta=ScoreMeta(topic_version=topic_version, calc_version=calc_version),
+                )
+            )
+            continue
+
         quote = s.evidence_quote or ""
         items.append(
             ScoreItem(
                 entity_type="party",
                 entity_id=str(s.party_id),
-                entity_name=(p.name_ja if p else None),
+                entity_name=party.name_ja,
                 topic_id=topic_id,
                 mode="claim",
                 stance_label=s.stance_label,
@@ -71,14 +101,14 @@ def get_topic_positions(
                 rationale=s.rationale,
                 evidence=[
                     Evidence(
-                        url=s.evidence_url or (p.official_home_url if p else ""),
+                        url=s.evidence_url or (party.official_home_url or ""),
                         fetched_at=(run.created_at or datetime.now(timezone.utc)),
                         quote=quote,
                         quote_start=0,
                         quote_end=len(quote),
                     )
                 ]
-                if (s.evidence_url or (p and p.official_home_url))
+                if (s.evidence_url or party.official_home_url)
                 else [],
                 meta=ScoreMeta(topic_version=topic_version, calc_version=calc_version),
             )

@@ -3,9 +3,10 @@
 
 スコア定義:
 - stance_score は -100〜+100 の相対スコア。
-- -100 は「軸A（増税・税負担増をより支持）に強く近い」
-- +100 は「軸B（減税・税負担減をより支持）に強く近い」
-- 0 は中立/不明確/両論併記に近い
+- 入力JSONの `topic` に `rubric`（スコア表）が含まれる場合は、それに従って採点する。
+  - rubric.steps の score の最小値が -100 側、最大値が +100 側。
+  - 0 は中立/不明確/両論併記に近い。
+- `rubric` が無い場合は、0 を中立として妥当な相対スコアを付ける（極端な±100は避ける）。
 
 ラベル:
 - stance_label: support / oppose / conditional / not_mentioned / unknown
@@ -20,7 +21,7 @@
     "stance_label":"conditional",
     "stance_score":35,
     "confidence":0.72,
-    "rationale":"短い理由（引用に紐づく）",
-    "evidence_url":"https://..."
+    "rationale":"短い理由（根拠URLの内容に紐づく）",
+    "evidence_url":"https://...（可能なら根拠ページのURL。トップページは避ける）"
   }
 ]
