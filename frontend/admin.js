@@ -31,6 +31,7 @@ const scoreMaxEvidenceEl = document.getElementById("scoreMaxEvidence");
 const runScoringBtn = document.getElementById("runScoring");
 const loadLatestScoresBtn = document.getElementById("loadLatestScores");
 const scoreResultEl = document.getElementById("scoreResult");
+const downloadSnapshotBtn = document.getElementById("downloadSnapshot");
 
 const openaiSearchModelEl = document.getElementById("openaiSearchModel");
 const geminiSearchModelEl = document.getElementById("geminiSearchModel");
@@ -109,6 +110,29 @@ async function request(path, { method = "GET", body } = {}) {
     throw new Error(`${res.status} ${res.statusText}: ${text}`);
   }
   return res.json();
+}
+
+async function downloadSnapshot() {
+  const apiBase = getApiBase();
+  const apiKey = getApiKey();
+  const headers = {};
+  if (apiKey) headers["X-API-Key"] = apiKey;
+
+  const res = await fetch(`${apiBase}/admin/snapshot`, { headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "snapshot.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function pillClass(status) {
@@ -623,6 +647,9 @@ purgeTopicsBtn.addEventListener("click", () => purge(["topics"]));
 purgeAllBtn.addEventListener("click", () => purge(["all"]));
 runScoringBtn.addEventListener("click", runScoring);
 loadLatestScoresBtn.addEventListener("click", loadLatestScores);
+downloadSnapshotBtn?.addEventListener("click", () =>
+  downloadSnapshot().catch((e) => alert(`ダウンロード失敗: ${e.message}`))
+);
 
 // init
 apiBaseEl.value = getApiBase();
