@@ -198,6 +198,7 @@ python scripts/discover_party_registry.py --query "日本の国政政党 公式�
 ## Web公開（低コスト）
 低コスト/無料での公開案は `docs/deployment.md` を参照してください。
 静的公開（APIを公開しない）に切り替える場合は、管理UIから `snapshot.json` を出力して `frontend/data/snapshot.json` として配置します（詳細は `docs/deployment.md`）。
+GitHub Pages で `frontend/` を公開する場合は、GitHub Actions によるデプロイ（`.github/workflows/pages.yml`）を使います（Pages設定の Source を GitHub Actions に変更）。
 
 ## ライセンス
 MIT License（`LICENSE` を参照）
