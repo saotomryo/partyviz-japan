@@ -242,6 +242,8 @@ class TopicCreate(BaseModel):
     topic_id: str
     name: str
     description: Optional[str] = None
+    search_subkeywords: List[str] = Field(default_factory=list)
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TopicCreateRequest(BaseModel):

@@ -150,14 +150,22 @@ def admin_purge_endpoint(req: AdminPurgeRequest, db: Session = Depends(get_db)) 
 
 @router.get("/topics", response_model=list[TopicCreate], dependencies=[Depends(require_api_key)])
 def admin_list_topics(db: Session = Depends(get_db)) -> list[TopicCreate]:
-    return [TopicCreate(topic_id=t.topic_id, name=t.name, description=t.description) for t in topic_rubrics.list_topics(db)]
+    return [
+        TopicCreate(
+            topic_id=t.topic_id,
+            name=t.name,
+            description=t.description,
+            search_subkeywords=list(getattr(t, "search_subkeywords", None) or []),
+        )
+        for t in topic_rubrics.list_topics(db)
+    ]
 
 
 @router.post("/topics", response_model=TopicCreate, dependencies=[Depends(require_api_key)])
 def admin_create_topic(payload: TopicCreateRequest, db: Session = Depends(get_db)) -> TopicCreate:
     topic_id = payload.topic_id or _generate_topic_id(db, payload.name)
     t = topic_rubrics.upsert_topic(db, TopicCreate(topic_id=topic_id, name=payload.name, description=payload.description))
-    return TopicCreate(topic_id=t.topic_id, name=t.name, description=t.description)
+    return TopicCreate(topic_id=t.topic_id, name=t.name, description=t.description, search_subkeywords=list(getattr(t, "search_subkeywords", None) or []))
 
 
 @router.put("/topics/{topic_id}", response_model=TopicCreate, dependencies=[Depends(require_api_key)])
@@ -165,7 +173,7 @@ def admin_upsert_topic(topic_id: str, payload: TopicCreate, db: Session = Depend
     if payload.topic_id != topic_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="topic_id mismatch")
     t = topic_rubrics.upsert_topic(db, payload)
-    return TopicCreate(topic_id=t.topic_id, name=t.name, description=t.description)
+    return TopicCreate(topic_id=t.topic_id, name=t.name, description=t.description, search_subkeywords=list(getattr(t, "search_subkeywords", None) or []))
 
 
 @router.get("/topics/{topic_id}/rubrics", response_model=list[TopicRubricResponse], dependencies=[Depends(require_api_key)])

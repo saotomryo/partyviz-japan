@@ -217,7 +217,7 @@ function renderPositions(data) {
       const offset = (idx - (group.length - 1) / 2) * step;
       const color = colorMap.get(s.entity_id) || "#7ad5ff";
 
-      return `<button class="plot-axis__dot" style="left:${percent}%; top:calc(50% + ${offset}px); background:${color};" title="${escapeAttr(fullTitle)}" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}"></button>`;
+      return `<button class="plot-axis__dot" style="left:${percent}%; top:calc(50% + ${offset}px); background:${color};" title="${escapeAttr(fullTitle)}" data-name="${escapeAttr(title)}" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}"></button>`;
     })
     .join("");
 

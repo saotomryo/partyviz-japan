@@ -41,8 +41,52 @@ class OpenAILLMSearchClient:
         self.last_discovery_query: str | None = None
         self.last_evidence_payload: dict | None = None
         self.last_used: str | None = None  # "responses" | "chat"
+        self.last_grounding_urls: list[str] | None = None
+        self.last_usage: dict | None = None
 
-    def _responses_web_search(self, *, system: str, user: str) -> str:
+    @staticmethod
+    def _extract_urls(obj) -> list[str]:
+        urls: list[str] = []
+
+        def walk(x):
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    lk = str(k).lower()
+                    if lk in {"url", "uri", "link", "source_url", "source_uri"} and isinstance(v, str):
+                        urls.append(v)
+                    walk(v)
+            elif isinstance(x, list):
+                for it in x:
+                    walk(it)
+
+        walk(obj)
+        out: list[str] = []
+        seen: set[str] = set()
+        for u in urls:
+            u2 = (u or "").strip()
+            if not u2 or u2 in seen:
+                continue
+            seen.add(u2)
+            out.append(u2)
+        return out
+
+    @staticmethod
+    def _normalize_http_url(url: str) -> str:
+        u = (url or "").strip()
+        if not u:
+            return ""
+        if u.startswith("//"):
+            u = "https:" + u
+        if not (u.startswith("http://") or u.startswith("https://")):
+            return ""
+        return u
+
+    @staticmethod
+    def _normalize_compare_url(url: str) -> str:
+        u = OpenAILLMSearchClient._normalize_http_url(url)
+        return u[:-1] if u.endswith("/") else u
+
+    def _responses_web_search(self, *, system: str, user: str, allowed_domains: list[str] | None = None) -> str:
         """
         OpenAI Responses API をHTTPで直接叩いて web_search_preview を使う。
         SDKバージョン差異で chat.completions に web_search_options を渡せないケースの回避策。
@@ -51,13 +95,19 @@ class OpenAILLMSearchClient:
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
         # まずは現在のResponses APIで一般的な形を試す
+        tool: dict = {"type": "web_search_preview"}
+        if self.search_context_size:
+            tool["search_context_size"] = self.search_context_size
+        if allowed_domains:
+            tool["filters"] = {"allowed_domains": list(dict.fromkeys([d for d in allowed_domains if d]))}
+
         payload = {
             "model": self.model,
             "input": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "tools": [{"type": "web_search_preview"}],
+            "tools": [tool],
             "tool_choice": "auto",
         }
 
@@ -66,6 +116,8 @@ class OpenAILLMSearchClient:
         r = self.http_client.post(url, headers=headers, json=payload, timeout=60)
         r.raise_for_status()
         data = r.json()
+        self.last_grounding_urls = self._extract_urls(data)
+        self.last_usage = data.get("usage") if isinstance(data, dict) else None
 
         # output_text があればそれを優先
         if isinstance(data, dict):
@@ -103,6 +155,7 @@ class OpenAILLMSearchClient:
         except Exception as e:
             self.last_error = f"responses_web_search failed ({type(e).__name__}: {e}); fallback to chat.completions"
             self.last_used = "chat"
+            self.last_grounding_urls = None
             # フォールバック: 通常のChat Completions（検索なし、URLハルシネーションの可能性あり）
             try:
                 messages = [
@@ -151,15 +204,29 @@ class OpenAILLMSearchClient:
                 ),
             },
         ]
+        allowed_domains: list[str] = []
+        for p in parties:
+            host = urlparse(p.official_url).netloc
+            if host:
+                allowed_domains.append(host)
+            allowed_domains.extend(list(p.allowed_domains or []))
+
         try:
             self.last_error = None
             self.last_used = "responses"
             text = (
-                self._responses_web_search(system=SYSTEM_PROMPT_EVIDENCE, user=messages[1]["content"]) or "[]"
+                self._responses_web_search(
+                    system=SYSTEM_PROMPT_EVIDENCE,
+                    user=messages[1]["content"],
+                    allowed_domains=allowed_domains,
+                )
+                or "[]"
             )
         except Exception as e:
             self.last_error = f"responses_web_search failed ({type(e).__name__}: {e}); fallback to chat.completions"
             self.last_used = "chat"
+            self.last_grounding_urls = None
+            self.last_usage = None
             try:
                 resp = self.client.chat.completions.create(model=self.model, messages=messages)
                 text = resp.choices[0].message.content or "[]"
@@ -167,20 +234,30 @@ class OpenAILLMSearchClient:
             except Exception as e2:
                 self.last_error = f"{self.last_error}; chat.completions failed ({type(e2).__name__}: {e2})"
                 return []
+
+        # 検索なし（chatフォールバック）の結果はURLハルシネーションになりやすいので採用しない
+        if self.last_used != "responses":
+            return []
         try:
             data = parse_json(text)
         except Exception:
             return []
 
         results: List[PolicyEvidence] = []
+        grounded_set = {self._normalize_compare_url(u) for u in (self.last_grounding_urls or []) if u}
         for item in data:
             party_name = item.get("party_name") or ""
             evidence_items = []
             for ev in item.get("evidence", []) or []:
                 url = ev.get("evidence_url") or ev.get("url")
                 quote = ev.get("quote") or ""
-                if url:
-                    evidence_items.append(EvidenceSnippet(evidence_url=url, quote=quote))
+                url = self._normalize_http_url(url or "")
+                if not url:
+                    continue
+                # 検索ツールを使っている場合、groundingに含まれないURLはハルシネーションの可能性が高いので除外
+                if self.last_used == "responses" and grounded_set and self._normalize_compare_url(url) not in grounded_set:
+                    continue
+                evidence_items.append(EvidenceSnippet(evidence_url=url, quote=quote))
             results.append(PolicyEvidence(party_name=party_name, evidence=evidence_items))
         return results
 
@@ -201,6 +278,7 @@ class GeminiLLMSearchClient:
         self.last_discovery_query: str | None = None
         self.last_evidence_payload: dict | None = None
         self.last_error: str | None = None
+        self.last_grounding_urls: list[str] | None = None
         self.http_client = httpx.Client(timeout=120, follow_redirects=True)
 
     def _generate_grounded(self, prompt: str) -> str:
@@ -216,6 +294,7 @@ class GeminiLLMSearchClient:
         r = self.http_client.post(url, params=params, json=payload)
         r.raise_for_status()
         data = r.json()
+        self.last_grounding_urls = OpenAILLMSearchClient._extract_urls(data)
         # candidates[0].content.parts[].text を連結
         candidates = data.get("candidates") if isinstance(data, dict) else None
         if not candidates:
@@ -238,6 +317,7 @@ class GeminiLLMSearchClient:
             text = self._generate_grounded(prompt) or "[]"
         except Exception as e:
             self.last_error = f"grounded generateContent failed ({type(e).__name__}: {e}); fallback to plain"
+            self.last_grounding_urls = None
             text = self._generate_plain(prompt) or "[]"
         self.last_raw_text = text
         if self.debug:
@@ -276,7 +356,9 @@ class GeminiLLMSearchClient:
             text = self._generate_grounded(prompt) or "[]"
         except Exception as e:
             self.last_error = f"grounded generateContent failed ({type(e).__name__}: {e}); fallback to plain"
-            text = self._generate_plain(prompt) or "[]"
+            self.last_grounding_urls = None
+            # grounding無しの出力はURLハルシネーションになりやすいので採用しない
+            return []
         self.last_raw_text = text
         if self.debug:
             print("[gemini.evidence] raw:", text[:400])
@@ -285,13 +367,18 @@ class GeminiLLMSearchClient:
         except Exception:
             return []
         results: List[PolicyEvidence] = []
+        grounded_set = {OpenAILLMSearchClient._normalize_compare_url(u) for u in (self.last_grounding_urls or []) if u}
         for item in data:
             party_name = item.get("party_name") or ""
             evidence_items = []
             for ev in item.get("evidence", []) or []:
                 url = ev.get("evidence_url") or ev.get("url")
                 quote = ev.get("quote") or ""
-                if url:
-                    evidence_items.append(EvidenceSnippet(evidence_url=url, quote=quote))
+                url = OpenAILLMSearchClient._normalize_http_url(url or "")
+                if not url:
+                    continue
+                if grounded_set and OpenAILLMSearchClient._normalize_compare_url(url) not in grounded_set:
+                    continue
+                evidence_items.append(EvidenceSnippet(evidence_url=url, quote=quote))
             results.append(PolicyEvidence(party_name=party_name, evidence=evidence_items))
         return results

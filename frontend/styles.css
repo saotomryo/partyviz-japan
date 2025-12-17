@@ -271,6 +271,26 @@ select {
   transform: translate(-50%, -50%) scale(1.06);
 }
 
+.plot-axis__dot:hover::after,
+.plot-axis__dot:focus-visible::after {
+  content: attr(data-name);
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+  padding: 6px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1;
+  color: rgba(240, 250, 255, 0.95);
+  background: rgba(10, 16, 30, 0.92);
+  border: 1px solid rgba(120, 190, 170, 0.35);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
 .plot-legend {
   display: flex;
   flex-wrap: wrap;

@@ -7,6 +7,28 @@ from sqlalchemy.orm import Session
 
 from ..db import models
 from ..schemas import TopicCreate, TopicRubricCreate, TopicRubricUpdate
+from ..settings import settings
+from ..agents import query_expander
+
+
+def _generate_subkeywords(name: str, description: str | None) -> list[str]:
+    topic_text = name.strip()
+    if description and description.strip():
+        topic_text = f"{topic_text}\n{description.strip()}"
+    # Prefer Gemini for cost; fallback to OpenAI.
+    if settings.gemini_api_key:
+        return query_expander.generate_subkeywords_gemini(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_score_model,
+            topic=topic_text,
+        )
+    if settings.openai_api_key:
+        return query_expander.generate_subkeywords_openai(
+            api_key=settings.openai_api_key,
+            model=settings.openai_score_model,
+            topic=topic_text,
+        )
+    return []
 
 
 def upsert_topic(db: Session, payload: TopicCreate) -> models.Topic:
@@ -14,11 +36,13 @@ def upsert_topic(db: Session, payload: TopicCreate) -> models.Topic:
     if topic:
         topic.name = payload.name
         topic.description = payload.description
+        topic.search_subkeywords = _generate_subkeywords(payload.name, payload.description)
         db.commit()
         db.refresh(topic)
         return topic
 
     topic = models.Topic(topic_id=payload.topic_id, name=payload.name, description=payload.description)
+    topic.search_subkeywords = _generate_subkeywords(payload.name, payload.description)
     db.add(topic)
     db.commit()
     db.refresh(topic)
@@ -102,4 +126,3 @@ def activate_rubric(db: Session, rubric_id) -> models.TopicRubric:
     db.commit()
     db.refresh(rubric)
     return rubric
-

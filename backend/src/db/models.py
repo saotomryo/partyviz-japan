@@ -40,6 +40,7 @@ class Topic(Base):
     topic_id = Column(Text, primary_key=True)
     name = Column(Text, nullable=False)
     description = Column(Text)
+    search_subkeywords = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
 

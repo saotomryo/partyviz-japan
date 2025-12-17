@@ -148,15 +148,28 @@ def build_topic_detail(db: Session, topic_id: str, party_id: str) -> TopicDetail
 def build_snapshot(db: Session) -> dict[str, Any]:
     topics = [Topic(topic_id=t.topic_id, name=t.name, description=t.description) for t in public_data.list_topics(db)]
     positions: dict[str, Any] = {}
+    runs: dict[str, Any] = {}
     for t in topics:
         p = build_topic_positions(db, t.topic_id)
         if p:
             positions[t.topic_id] = p.model_dump(mode="json")
+        run = public_data.get_latest_score_run(db, t.topic_id)
+        if run:
+            runs[t.topic_id] = {
+                "run_id": str(run.run_id),
+                "topic_id": run.topic_id,
+                "created_at": (run.created_at.isoformat() if getattr(run, "created_at", None) else None),
+                "search_provider": getattr(run, "search_provider", None),
+                "search_model": getattr(run, "search_model", None),
+                "score_provider": getattr(run, "score_provider", None),
+                "score_model": getattr(run, "score_model", None),
+                "meta": (getattr(run, "meta", None) or {}),
+            }
 
     return {
         "snapshot_version": 1,
         "generated_at": _now_utc().isoformat(),
         "topics": [t.model_dump(mode="json") for t in topics],
         "positions": positions,
+        "runs": runs,
     }
-

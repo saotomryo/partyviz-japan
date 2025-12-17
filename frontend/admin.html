@@ -82,14 +82,15 @@
       </div>
       <div style="padding: 12px;">
         <div class="row">
-          <label>topic_id（任意）<input id="topicId" placeholder="（空なら自動生成）" /></label>
-          <label>name<input id="topicName" placeholder="財政規律" /></label>
-        </div>
-        <label style="margin-top:10px;">description<textarea id="topicDesc" placeholder="積極財政か規律重視か"></textarea></label>
-        <div class="row" style="margin-top:10px;">
-          <button class="button-link" id="upsertTopic">追加/更新</button>
-          <button class="button-link" id="refreshTopics">一覧更新</button>
-        </div>
+        <label>topic_id（任意）<input id="topicId" placeholder="（空なら自動生成）" /></label>
+        <label>name<input id="topicName" placeholder="財政規律" /></label>
+      </div>
+      <label style="margin-top:10px;">description<textarea id="topicDesc" placeholder="積極財政か規律重視か"></textarea></label>
+      <label style="margin-top:10px;">search_subkeywords（自動生成・確認用）<textarea id="topicSubkeywords" readonly placeholder="（追加/更新時に生成されます）"></textarea></label>
+      <div class="row" style="margin-top:10px;">
+        <button class="button-link" id="upsertTopic">追加/更新</button>
+        <button class="button-link" id="refreshTopics">一覧更新</button>
+      </div>
       </div>
       <div class="divider"></div>
       <ul id="topicList" class="topic-list"></ul>

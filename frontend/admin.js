@@ -12,6 +12,7 @@ const upsertTopicBtn = document.getElementById("upsertTopic");
 const topicIdInput = document.getElementById("topicId");
 const topicNameInput = document.getElementById("topicName");
 const topicDescInput = document.getElementById("topicDesc");
+const topicSubkeywordsInput = document.getElementById("topicSubkeywords");
 
 const selTopicIdEl = document.getElementById("selTopicId");
 const selTopicTitleEl = document.getElementById("selTopicTitle");
@@ -171,6 +172,8 @@ function selectTopic(topic) {
   topicIdInput.value = topic.topic_id;
   topicNameInput.value = topic.name;
   topicDescInput.value = topic.description || "";
+  const kws = topic.search_subkeywords || [];
+  topicSubkeywordsInput.value = kws.length ? kws.join(", ") : "（生成結果が空です）";
 
   genTopicNameEl.value = topic.name;
   genDescEl.value = topic.description || "";
