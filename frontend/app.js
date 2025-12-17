@@ -1,4 +1,5 @@
-const API_BASE = "http://localhost:8000";
+const DEFAULT_API_BASE = "http://localhost:8000";
+const DEFAULT_SNAPSHOT_URL = "./data/snapshot.json";
 
 const topicListEl = document.getElementById("topicList");
 const positionsEl = document.getElementById("positions");
@@ -11,8 +12,53 @@ const modeBadgeEl = document.getElementById("modeBadge");
 const overlayEl = document.getElementById("detailOverlay");
 const overlayCloseBtn = document.getElementById("overlayClose");
 const detailContentEl = document.getElementById("detailContent");
+const adminLinkEl = document.getElementById("adminLink");
 
 let selectedTopicId = null;
+let snapshotData = null;
+let dataSource = "api";
+
+function getQueryParam(key) {
+  const url = new URL(window.location.href);
+  return url.searchParams.get(key);
+}
+
+function getApiBase() {
+  return (localStorage.getItem("partyviz_public_api_base") || DEFAULT_API_BASE).trim();
+}
+
+async function tryLoadSnapshot() {
+  const source = (getQueryParam("source") || "").toLowerCase();
+  if (source === "api") return;
+
+  const snapshotUrl =
+    getQueryParam("snapshot") ||
+    (localStorage.getItem("partyviz_public_snapshot_url") || "").trim() ||
+    DEFAULT_SNAPSHOT_URL;
+
+  try {
+    const res = await fetch(snapshotUrl, { cache: "no-cache" });
+    if (!res.ok) {
+      if (source === "snapshot") throw new Error(`snapshot fetch failed: HTTP ${res.status}`);
+      return;
+    }
+    const json = await res.json();
+    if (!json || !Array.isArray(json.topics) || typeof json.positions !== "object") {
+      if (source === "snapshot") throw new Error("snapshot format invalid");
+      return;
+    }
+    snapshotData = json;
+    dataSource = "snapshot";
+  } catch (e) {
+    if (source === "snapshot") throw e;
+  }
+}
+
+function applyUiForDataSource() {
+  if (dataSource === "snapshot" && adminLinkEl) {
+    adminLinkEl.remove();
+  }
+}
 
 async function fetchJSON(url) {
   const res = await fetch(url);
@@ -21,6 +67,40 @@ async function fetchJSON(url) {
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
   }
   return res.json();
+}
+
+async function getTopics() {
+  if (dataSource === "snapshot") {
+    return { topics: snapshotData.topics };
+  }
+  return fetchJSON(`${getApiBase()}/topics`);
+}
+
+async function getPositions(topicId, mode, entity) {
+  if (dataSource === "snapshot") {
+    const p = snapshotData.positions?.[topicId];
+    if (!p) throw new Error("snapshot: positions not found for topic");
+    return p;
+  }
+  return fetchJSON(`${getApiBase()}/topics/${topicId}/positions?mode=${mode}&entity=${encodeURIComponent(entity)}`);
+}
+
+async function getDetail(entityId, topicId, mode) {
+  if (dataSource === "snapshot") {
+    const p = snapshotData.positions?.[topicId];
+    const s = p?.scores?.find((x) => x.entity_id === entityId);
+    if (!p || !s) throw new Error("snapshot: score not found");
+    return {
+      topic: p.topic,
+      mode: p.mode || mode,
+      entity_id: entityId,
+      rubric_version: p.rubric_version ?? null,
+      axis_a_label: p.axis_a_label ?? null,
+      axis_b_label: p.axis_b_label ?? null,
+      score: s,
+    };
+  }
+  return fetchJSON(`${getApiBase()}/entities/${entityId}/topics/${topicId}/detail?mode=${mode}`);
 }
 
 function stanceColorClass(label) {
@@ -253,7 +333,7 @@ async function openDetail(entityId, topicId, mode) {
   try {
     overlayEl.classList.remove("hidden");
     detailContentEl.innerHTML = `<p class="muted">読み込み中...</p>`;
-    const data = await fetchJSON(`${API_BASE}/entities/${entityId}/topics/${topicId}/detail?mode=${mode}`);
+    const data = await getDetail(entityId, topicId, mode);
     renderDetail(data);
   } catch (err) {
     detailContentEl.innerHTML = `<p class="muted">取得に失敗しました: ${err.message}</p>`;
@@ -262,7 +342,7 @@ async function openDetail(entityId, topicId, mode) {
 
 async function loadTopics() {
   try {
-    const data = await fetchJSON(`${API_BASE}/topics`);
+    const data = await getTopics();
     renderTopics(data.topics);
   } catch (err) {
     topicListEl.innerHTML = `<li class="muted">トピック取得に失敗しました: ${err.message}</li>`;
@@ -274,7 +354,7 @@ async function loadPositions() {
   const mode = modeSelect.value;
   const entity = entitySelect.value;
   try {
-    const data = await fetchJSON(`${API_BASE}/topics/${selectedTopicId}/positions?mode=${mode}&entity=${encodeURIComponent(entity)}`);
+    const data = await getPositions(selectedTopicId, mode, entity);
     renderPositions(data);
   } catch (err) {
     positionsEl.innerHTML = `<p class="muted">取得に失敗しました: ${err.message}</p>`;
@@ -288,4 +368,12 @@ overlayEl.addEventListener("click", (e) => {
   if (e.target === overlayEl) overlayEl.classList.add("hidden");
 });
 
-loadTopics();
+(async () => {
+  try {
+    await tryLoadSnapshot();
+    applyUiForDataSource();
+  } catch (e) {
+    positionsEl.innerHTML = `<p class="muted">スナップショット読み込みに失敗しました: ${e.message}</p>`;
+  }
+  loadTopics();
+})();

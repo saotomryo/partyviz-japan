@@ -29,6 +29,7 @@ from ..services import admin_purge as admin_purge_service
 from ..services import party_registry
 from ..services import party_registry_auto
 from ..services import scoring_runs
+from ..services import snapshot_export
 from ..settings import settings
 from ..services import topic_rubrics
 from ..agents import rubric_generator
@@ -127,6 +128,12 @@ def discover_parties(req: PartyRegistryDiscoverRequest, db: Session = Depends(ge
         skipped=int(summary.get("skipped", 0)),
         results=results,
     )
+
+
+@router.get("/snapshot", dependencies=[Depends(require_api_key)])
+def export_snapshot(db: Session = Depends(get_db)):
+    """公開用のスナップショットJSON（静的ホスティング向け）。"""
+    return snapshot_export.build_snapshot(db)
 
 @router.post("/dev/purge", response_model=AdminPurgeResponse, dependencies=[Depends(require_api_key)])
 def admin_purge_endpoint(req: AdminPurgeRequest, db: Session = Depends(get_db)) -> AdminPurgeResponse:
