@@ -78,14 +78,25 @@ def _build_evidence_list(
     return []
 
 
-def build_topic_positions(db: Session, topic_id: str) -> TopicPositionsResponse | None:
+def build_topic_positions(
+    db: Session,
+    topic_id: str,
+    *,
+    scope: str = "official",
+    fallback_to_official: bool = True,
+) -> TopicPositionsResponse | None:
     topic_row = public_data.get_topic(db, topic_id)
     if not topic_row:
         return None
 
     topic = Topic(topic_id=topic_row.topic_id, name=topic_row.name, description=topic_row.description)
     rubric = public_data.get_active_rubric(db, topic_id)
-    run = public_data.get_latest_score_run(db, topic_id)
+    scope_norm = (scope or "official").strip().lower()
+    if scope_norm not in {"official", "mixed"}:
+        scope_norm = "official"
+    run = public_data.get_latest_score_run(db, topic_id, scope=scope_norm)
+    if fallback_to_official and (not run) and scope_norm == "mixed":
+        run = public_data.get_latest_score_run(db, topic_id, scope="official")
 
     axis_left, axis_right = _axis_labels(rubric)
     rubric_version = rubric.version if rubric else None
@@ -180,12 +191,14 @@ def build_topic_detail(db: Session, topic_id: str, party_id: str) -> TopicDetail
 def build_snapshot(db: Session) -> dict[str, Any]:
     topics = [Topic(topic_id=t.topic_id, name=t.name, description=t.description) for t in public_data.list_topics(db)]
     positions: dict[str, Any] = {}
+    positions_mixed: dict[str, Any] = {}
     runs: dict[str, Any] = {}
+    runs_mixed: dict[str, Any] = {}
     for t in topics:
-        p = build_topic_positions(db, t.topic_id)
+        p = build_topic_positions(db, t.topic_id, scope="official")
         if p:
             positions[t.topic_id] = p.model_dump(mode="json")
-        run = public_data.get_latest_score_run(db, t.topic_id)
+        run = public_data.get_latest_score_run(db, t.topic_id, scope="official")
         if run:
             runs[t.topic_id] = {
                 "run_id": str(run.run_id),
@@ -197,11 +210,28 @@ def build_snapshot(db: Session) -> dict[str, Any]:
                 "score_model": getattr(run, "score_model", None),
                 "meta": (getattr(run, "meta", None) or {}),
             }
+        runm = public_data.get_latest_score_run(db, t.topic_id, scope="mixed")
+        if runm:
+            pm = build_topic_positions(db, t.topic_id, scope="mixed", fallback_to_official=False)
+            if pm:
+                positions_mixed[t.topic_id] = pm.model_dump(mode="json")
+            runs_mixed[t.topic_id] = {
+                "run_id": str(runm.run_id),
+                "topic_id": runm.topic_id,
+                "created_at": (runm.created_at.isoformat() if getattr(runm, "created_at", None) else None),
+                "search_provider": getattr(runm, "search_provider", None),
+                "search_model": getattr(runm, "search_model", None),
+                "score_provider": getattr(runm, "score_provider", None),
+                "score_model": getattr(runm, "score_model", None),
+                "meta": (getattr(runm, "meta", None) or {}),
+            }
 
     return {
         "snapshot_version": 1,
         "generated_at": _now_utc().isoformat(),
         "topics": [t.model_dump(mode="json") for t in topics],
         "positions": positions,
+        "positions_mixed": positions_mixed,
         "runs": runs,
+        "runs_mixed": runs_mixed,
     }

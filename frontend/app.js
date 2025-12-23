@@ -76,18 +76,23 @@ async function getTopics() {
   return fetchJSON(`${getApiBase()}/topics`);
 }
 
-async function getPositions(topicId, mode, entity) {
+async function getPositionsForScope(topicId, mode, entity, scope, fallback = 1) {
   if (dataSource === "snapshot") {
-    const p = snapshotData.positions?.[topicId];
+    const mixed = scope === "mixed" ? snapshotData.positions_mixed?.[topicId] : null;
+    const p = mixed || (fallback ? snapshotData.positions?.[topicId] : null);
     if (!p) throw new Error("snapshot: positions not found for topic");
     return p;
   }
-  return fetchJSON(`${getApiBase()}/topics/${topicId}/positions?mode=${mode}&entity=${encodeURIComponent(entity)}`);
+  return fetchJSON(
+    `${getApiBase()}/topics/${topicId}/positions?mode=${mode}&entity=${encodeURIComponent(entity)}&scope=${encodeURIComponent(scope)}&fallback=${fallback}`
+  );
 }
 
-async function getDetail(entityId, topicId, mode) {
+async function getDetail(entityId, topicId, mode, scope) {
   if (dataSource === "snapshot") {
-    const p = snapshotData.positions?.[topicId];
+    const p =
+      (scope === "mixed" ? snapshotData.positions_mixed?.[topicId] : null) ||
+      snapshotData.positions?.[topicId];
     const s = p?.scores?.find((x) => x.entity_id === entityId);
     if (!p || !s) throw new Error("snapshot: score not found");
     return {
@@ -100,7 +105,9 @@ async function getDetail(entityId, topicId, mode) {
       score: s,
     };
   }
-  return fetchJSON(`${getApiBase()}/entities/${entityId}/topics/${topicId}/detail?mode=${mode}`);
+  return fetchJSON(
+    `${getApiBase()}/entities/${entityId}/topics/${topicId}/detail?mode=${mode}&scope=${encodeURIComponent(scope)}&fallback=1`
+  );
 }
 
 function stanceColorClass(label) {
@@ -178,17 +185,19 @@ function renderTopics(topics) {
   });
 }
 
-function renderPositions(data) {
-  const { topic, mode, entity, scores, axis_a_label, axis_b_label } = data;
-  modeBadgeEl.textContent = `mode: ${mode}`;
+function renderPositionsBlock(data, scopeLabel, scopeValue) {
+  const { topic, mode, scores, axis_a_label, axis_b_label } = data;
   if (!scores || scores.length === 0) {
-    positionsEl.innerHTML = `<p class="muted">データがありません。</p>`;
-    return;
+    return `
+      <div class="rubric-item">
+        <header><h3>${scopeLabel}</h3></header>
+        <p class="muted">データがありません。</p>
+      </div>
+    `;
   }
 
   const leftLabel = axis_a_label || "Axis (-100)";
   const rightLabel = axis_b_label || "Axis (+100)";
-
   const colorMap = buildPartyColorMap(scores);
 
   const bucketKey = (score) => String(Math.round(Number(score || 0)));
@@ -217,7 +226,7 @@ function renderPositions(data) {
       const offset = (idx - (group.length - 1) / 2) * step;
       const color = colorMap.get(s.entity_id) || "#7ad5ff";
 
-      return `<button class="plot-axis__dot" style="left:${percent}%; top:calc(50% + ${offset}px); background:${color};" title="${escapeAttr(fullTitle)}" data-name="${escapeAttr(title)}" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}"></button>`;
+      return `<button class="plot-axis__dot" style="left:${percent}%; top:calc(50% + ${offset}px); background:${color};" title="${escapeAttr(fullTitle)}" data-name="${escapeAttr(title)}" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}" data-scope="${scopeValue}"></button>`;
     })
     .join("");
 
@@ -253,7 +262,7 @@ function renderPositions(data) {
           <div class="plot-row__track">
             <div class="plot-track">
               <div class="plot-track__zero"></div>
-              <button class="plot-dot" style="left:${percent}%; background:${color};" title="${escapeAttr(title)} (${s.stance_score})" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}"></button>
+              <button class="plot-dot" style="left:${percent}%; background:${color};" title="${escapeAttr(title)} (${s.stance_score})" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}" data-scope="${scopeValue}"></button>
             </div>
           </div>
           <div class="plot-row__score">${s.stance_score}</div>
@@ -262,11 +271,14 @@ function renderPositions(data) {
     })
     .join("");
 
-  positionsEl.innerHTML = `
-    <div class="plot">
+  return `
+    <div class="plot" style="margin-bottom: 18px;">
       <div class="plot__header">
-        <div class="plot__axis-label plot__axis-label--left">-100: ${leftLabel}</div>
-        <div class="plot__axis-label plot__axis-label--right">+100: ${rightLabel}</div>
+        <div>
+          <div class="rubric-meta">${scopeLabel}</div>
+          <div class="plot__axis-label plot__axis-label--left">-100: ${leftLabel}</div>
+          <div class="plot__axis-label plot__axis-label--right">+100: ${rightLabel}</div>
+        </div>
       </div>
       <div class="plot-legend">${legend}</div>
       <div class="plot__axis">
@@ -284,15 +296,10 @@ function renderPositions(data) {
       </div>
     </div>
   `;
-
-  positionsEl.querySelectorAll("button.plot-dot, button.plot-axis__dot").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      openDetail(btn.dataset.entity, btn.dataset.topic, btn.dataset.mode);
-    });
-  });
 }
 
 function renderDetail(data) {
+  const alt = data._alt || null;
   const s = data.score;
   const evidence = s.evidence
     .map(
@@ -305,6 +312,18 @@ function renderDetail(data) {
       </li>`
     )
     .join("");
+
+  const altSummary =
+    alt && alt.score
+      ? `<div class="rubric-item" style="margin: 10px 0;">
+          <div class="rubric-meta">公式のみ（比較）</div>
+          <div style="margin-top:6px;">
+            <span class="${stanceColorClass(alt.score.stance_label)}">${alt.score.stance_label}</span>
+            <span class="chip confidence">conf: ${alt.score.confidence}</span>
+            <span class="chip">score: ${alt.score.stance_score}</span>
+          </div>
+        </div>`
+      : "";
 
   const axisInfo =
     data.axis_a_label && data.axis_b_label
@@ -322,6 +341,7 @@ function renderDetail(data) {
       <span class="chip confidence">conf: ${s.confidence}</span>
       <span class="chip">score: ${s.stance_score}</span>
     </div>
+    ${altSummary}
     <p>${s.rationale}</p>
     <h4>根拠</h4>
     <ul class="evidence-list">${evidence}</ul>
@@ -329,11 +349,20 @@ function renderDetail(data) {
   `;
 }
 
-async function openDetail(entityId, topicId, mode) {
+async function openDetail(entityId, topicId, mode, scope) {
   try {
     overlayEl.classList.remove("hidden");
     detailContentEl.innerHTML = `<p class="muted">読み込み中...</p>`;
-    const data = await getDetail(entityId, topicId, mode);
+    const scopeNorm = (scope || "official").toLowerCase();
+    const data = await getDetail(entityId, topicId, mode, scopeNorm);
+    if (scopeNorm === "mixed") {
+      try {
+        const official = await getDetail(entityId, topicId, mode, "official");
+        data._alt = official;
+      } catch {
+        // ignore
+      }
+    }
     renderDetail(data);
   } catch (err) {
     detailContentEl.innerHTML = `<p class="muted">取得に失敗しました: ${err.message}</p>`;
@@ -354,8 +383,25 @@ async function loadPositions() {
   const mode = modeSelect.value;
   const entity = entitySelect.value;
   try {
-    const data = await getPositions(selectedTopicId, mode, entity);
-    renderPositions(data);
+    modeBadgeEl.textContent = `mode: ${mode}`;
+    const officialData = await getPositionsForScope(selectedTopicId, mode, entity, "official", 1);
+    let mixedData = null;
+    try {
+      mixedData = await getPositionsForScope(selectedTopicId, mode, entity, "mixed", 0);
+    } catch {
+      mixedData = null;
+    }
+    const blocks = [];
+    blocks.push(renderPositionsBlock(officialData, "公式のみ", "official"));
+    if (mixedData && mixedData.scores && mixedData.scores.length) {
+      blocks.push(renderPositionsBlock(mixedData, "公式＋外部（mixed）", "mixed"));
+    }
+    positionsEl.innerHTML = blocks.join("");
+    positionsEl.querySelectorAll("button.plot-dot, button.plot-axis__dot").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openDetail(btn.dataset.entity, btn.dataset.topic, btn.dataset.mode, btn.dataset.scope);
+      });
+    });
   } catch (err) {
     positionsEl.innerHTML = `<p class="muted">取得に失敗しました: ${err.message}</p>`;
   }

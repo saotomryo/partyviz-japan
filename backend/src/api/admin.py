@@ -2,9 +2,11 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..db import models
 from ..schemas import (
     AdminJobResponse,
     AdminPurgeRequest,
@@ -278,6 +280,7 @@ def admin_run_topic_scoring(topic_id: str, req: TopicScoreRunRequest, db: Sessio
             db,
             topic_id=topic_id,
             topic_text=topic_text,
+            scope="official",
             search_provider=req.search_provider,
             search_openai_model=req.search_openai_model,
             search_gemini_model=req.search_gemini_model,
@@ -291,7 +294,26 @@ def admin_run_topic_scoring(topic_id: str, req: TopicScoreRunRequest, db: Sessio
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    _, scores = scoring_runs.list_latest_topic_scores(db, topic_id=topic_id)
+    try:
+        scoring_runs.run_topic_scoring(
+            db,
+            topic_id=topic_id,
+            topic_text=topic_text,
+            scope="mixed",
+            search_provider=req.search_provider,
+            search_openai_model=req.search_openai_model,
+            search_gemini_model=req.search_gemini_model,
+            score_provider=req.score_provider,
+            score_openai_model=req.score_openai_model,
+            score_gemini_model=req.score_gemini_model,
+            max_parties=req.max_parties,
+            max_evidence_per_party=req.max_evidence_per_party,
+            debug=settings.agent_debug,
+        )
+    except ValueError:
+        pass
+
+    scores = list(db.scalars(select(models.TopicScore).where(models.TopicScore.run_id == run.run_id)))
     party_map = {p.party_id: p for p in party_registry.list_parties(db)}
     return TopicScoreRunResponse(
         run_id=run.run_id,

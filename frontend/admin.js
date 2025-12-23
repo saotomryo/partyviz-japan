@@ -29,6 +29,7 @@ const rubricListEl = document.getElementById("rubricList");
 
 const scoreMaxPartiesEl = document.getElementById("scoreMaxParties");
 const scoreMaxEvidenceEl = document.getElementById("scoreMaxEvidence");
+const scoreIncludeExternalEl = document.getElementById("scoreIncludeExternal");
 const runScoringBtn = document.getElementById("runScoring");
 const loadLatestScoresBtn = document.getElementById("loadLatestScores");
 const scoreResultEl = document.getElementById("scoreResult");
@@ -448,6 +449,7 @@ function renderScores(run) {
   `;
 }
 
+
 async function runScoring() {
   if (!selectedTopic) {
     alert("先にトピックを選択してください");
@@ -465,6 +467,7 @@ async function runScoring() {
       score_gemini_model: (geminiRubricModelEl.value || "").trim() || null,
       max_parties: Number(scoreMaxPartiesEl.value || 10),
       max_evidence_per_party: Number(scoreMaxEvidenceEl.value || 2),
+      include_external: true,
     };
     const run = await request(`/admin/topics/${encodeURIComponent(selectedTopic.topic_id)}/scores/run`, {
       method: "POST",

@@ -172,6 +172,7 @@ class TopicScoreRunRequest(BaseModel):
     score_gemini_model: Optional[str] = None
     max_parties: int = Field(default=10, ge=1, le=100)
     max_evidence_per_party: int = Field(default=2, ge=1, le=5)
+    include_external: bool = Field(default=False, description="公式ページ以外のWebページも根拠に含めたスコア（mixed）を追加で保存する")
 
 
 class TopicScoreItem(BaseModel):

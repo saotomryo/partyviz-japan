@@ -73,6 +73,8 @@ def get_topic_positions(
     topic_id: str,
     mode: str = Query("claim", pattern="^(claim|action|combined)$"),
     entity: str = Query("party", pattern="^(party|party\\+politician)$"),
+    scope: str = Query("official", pattern="^(official|mixed)$"),
+    fallback: int = Query(1, ge=0, le=1, description="mixedが無い場合にofficialへフォールバックする(1)か"),
     db: Session = Depends(get_db),
 ) -> TopicPositionsResponse:
     if mode != "claim":
@@ -85,7 +87,10 @@ def get_topic_positions(
         raise HTTPException(status_code=404, detail="topic not found")
     topic = Topic(topic_id=topic_row.topic_id, name=topic_row.name, description=topic_row.description)
 
-    run = public_data.get_latest_score_run(db, topic_id)
+    scope_norm = (scope or "official").strip().lower()
+    run = public_data.get_latest_score_run(db, topic_id, scope=scope_norm)
+    if (not run) and scope_norm == "mixed" and int(fallback) == 1:
+        run = public_data.get_latest_score_run(db, topic_id, scope="official")
     if not run:
         return TopicPositionsResponse(topic=topic, mode=mode, entity=entity, scores=[])
     scores = public_data.list_scores_for_run(db, run.run_id)
@@ -181,6 +186,8 @@ def get_topic_detail(
     entity_id: str,
     topic_id: str,
     mode: str = Query("claim", pattern="^(claim|action|combined)$"),
+    scope: str = Query("official", pattern="^(official|mixed)$"),
+    fallback: int = Query(1, ge=0, le=1, description="mixedが無い場合にofficialへフォールバックする(1)か"),
     db: Session = Depends(get_db),
 ) -> TopicDetailResponse:
     if mode != "claim":
@@ -191,7 +198,10 @@ def get_topic_detail(
         raise HTTPException(status_code=404, detail="topic not found")
     topic = Topic(topic_id=topic_row.topic_id, name=topic_row.name, description=topic_row.description)
 
-    run = public_data.get_latest_score_run(db, topic_id)
+    scope_norm = (scope or "official").strip().lower()
+    run = public_data.get_latest_score_run(db, topic_id, scope=scope_norm)
+    if (not run) and scope_norm == "mixed" and int(fallback) == 1:
+        run = public_data.get_latest_score_run(db, topic_id, scope="official")
     if not run:
         raise HTTPException(status_code=404, detail="score not found")
     scores = public_data.list_scores_for_run(db, run.run_id)

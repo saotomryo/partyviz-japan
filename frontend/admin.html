@@ -165,10 +165,16 @@
       <div class="divider"></div>
 
       <h3 style="margin:0 0 8px;">スコアリング（実行 & 保存）</h3>
-      <p class="small">選択中のトピックに対して、政党公式ページの根拠URL抽出→ページ取得→相対スコアリングを行いDBに保存します。</p>
+      <p class="small">選択中のトピックに対して、公式のみ・公式＋外部の2種類のスコアリングを実行しDBに保存します。</p>
       <div class="row">
         <label>max_parties<input id="scoreMaxParties" type="number" min="1" max="100" value="10" /></label>
         <label>max_evidence_per_party<input id="scoreMaxEvidence" type="number" min="1" max="5" value="2" /></label>
+        <label style="min-width: 220px;">
+          <span class="small">外部ページも含める（mixed）</span>
+          <select id="scoreIncludeExternal" disabled>
+            <option value="true">常に実行</option>
+          </select>
+        </label>
       </div>
       <div class="row" style="margin-top:10px;">
         <button class="button-link" id="runScoring">スコアリング実行</button>
