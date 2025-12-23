@@ -32,6 +32,52 @@ def _axis_labels(rubric: models.TopicRubric | None) -> tuple[str | None, str | N
     return axis_left, axis_right
 
 
+def _build_evidence_list(
+    *,
+    score_row: models.TopicScore,
+    fallback_url: str | None,
+    fetched_at: datetime,
+) -> list[Evidence]:
+    evidence_items: list[Evidence] = []
+    payload = getattr(score_row, "evidence", None)
+    if isinstance(payload, list):
+        for ev in payload:
+            if not isinstance(ev, dict):
+                continue
+            url = (ev.get("url") or ev.get("evidence_url") or "").strip()
+            if not url:
+                continue
+            quote = str(ev.get("quote") or ev.get("evidence_quote") or "")
+            ev_fetched_at = ev.get("fetched_at") or fetched_at
+            quote_start = int(ev.get("quote_start") or 0)
+            quote_end = int(ev.get("quote_end") or len(quote))
+            evidence_items.append(
+                Evidence(
+                    url=url,
+                    fetched_at=ev_fetched_at,
+                    quote=quote,
+                    quote_start=quote_start,
+                    quote_end=quote_end,
+                )
+            )
+    if evidence_items:
+        return evidence_items
+
+    quote = score_row.evidence_quote or ""
+    url = score_row.evidence_url or (fallback_url or "")
+    if url:
+        return [
+            Evidence(
+                url=url,
+                fetched_at=fetched_at,
+                quote=quote,
+                quote_start=0,
+                quote_end=len(quote),
+            )
+        ]
+    return []
+
+
 def build_topic_positions(db: Session, topic_id: str) -> TopicPositionsResponse | None:
     topic_row = public_data.get_topic(db, topic_id)
     if not topic_row:
@@ -84,21 +130,7 @@ def build_topic_positions(db: Session, topic_id: str) -> TopicPositionsResponse 
             )
             continue
 
-        quote = s.evidence_quote or ""
-        evidence_url = s.evidence_url or (party.official_home_url or "")
-        evidence = (
-            [
-                Evidence(
-                    url=evidence_url,
-                    fetched_at=fetched_at,
-                    quote=quote,
-                    quote_start=0,
-                    quote_end=len(quote),
-                )
-            ]
-            if evidence_url
-            else []
-        )
+        evidence = _build_evidence_list(score_row=s, fallback_url=(party.official_home_url or None), fetched_at=fetched_at)
 
         items.append(
             ScoreItem(

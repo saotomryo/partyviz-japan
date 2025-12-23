@@ -13,6 +13,51 @@ from ..services import public_data
 
 router = APIRouter()
 
+def _build_evidence_list(
+    *,
+    score_row: models.TopicScore,
+    fallback_url: str | None,
+    fetched_at: datetime,
+) -> list[Evidence]:
+    evidence_items: list[Evidence] = []
+    payload = getattr(score_row, "evidence", None)
+    if isinstance(payload, list):
+        for ev in payload:
+            if not isinstance(ev, dict):
+                continue
+            url = (ev.get("url") or ev.get("evidence_url") or "").strip()
+            if not url:
+                continue
+            quote = str(ev.get("quote") or ev.get("evidence_quote") or "")
+            ev_fetched_at = ev.get("fetched_at") or fetched_at
+            quote_start = int(ev.get("quote_start") or 0)
+            quote_end = int(ev.get("quote_end") or len(quote))
+            evidence_items.append(
+                Evidence(
+                    url=url,
+                    fetched_at=ev_fetched_at,
+                    quote=quote,
+                    quote_start=quote_start,
+                    quote_end=quote_end,
+                )
+            )
+    if evidence_items:
+        return evidence_items
+
+    quote = score_row.evidence_quote or ""
+    url = score_row.evidence_url or (fallback_url or "")
+    if url:
+        return [
+            Evidence(
+                url=url,
+                fetched_at=fetched_at,
+                quote=quote,
+                quote_start=0,
+                quote_end=len(quote),
+            )
+        ]
+    return []
+
 
 @router.get("/topics", response_model=TopicsResponse)
 def list_topics(db: Session = Depends(get_db)) -> TopicsResponse:
@@ -87,7 +132,8 @@ def get_topic_positions(
             )
             continue
 
-        quote = s.evidence_quote or ""
+        fetched_at = run.created_at or datetime.now(timezone.utc)
+        evidence_list = _build_evidence_list(score_row=s, fallback_url=party.official_home_url, fetched_at=fetched_at)
         items.append(
             ScoreItem(
                 entity_type="party",
@@ -99,17 +145,7 @@ def get_topic_positions(
                 stance_score=int(s.stance_score),
                 confidence=float(s.confidence),
                 rationale=s.rationale,
-                evidence=[
-                    Evidence(
-                        url=s.evidence_url or (party.official_home_url or ""),
-                        fetched_at=(run.created_at or datetime.now(timezone.utc)),
-                        quote=quote,
-                        quote_start=0,
-                        quote_end=len(quote),
-                    )
-                ]
-                if (s.evidence_url or party.official_home_url)
-                else [],
+                evidence=evidence_list,
                 meta=ScoreMeta(topic_version=topic_version, calc_version=calc_version),
             )
         )
@@ -179,7 +215,12 @@ def get_topic_detail(
         if getattr(run, "created_at", None)
         else datetime.now(timezone.utc).isoformat()
     )
-    quote = score_row.evidence_quote or ""
+    fetched_at = run.created_at or datetime.now(timezone.utc)
+    evidence_list = _build_evidence_list(
+        score_row=score_row,
+        fallback_url=(party.official_home_url if party else None),
+        fetched_at=fetched_at,
+    )
 
     axis_left = rubric.axis_a_label if rubric else None
     axis_right = rubric.axis_b_label if rubric else None
@@ -205,17 +246,7 @@ def get_topic_detail(
         stance_score=int(score_row.stance_score),
         confidence=float(score_row.confidence),
         rationale=score_row.rationale,
-        evidence=[
-            Evidence(
-                url=score_row.evidence_url or (party.official_home_url if party else ""),
-                fetched_at=(run.created_at or datetime.now(timezone.utc)),
-                quote=quote,
-                quote_start=0,
-                quote_end=len(quote),
-            )
-        ]
-        if (score_row.evidence_url or (party and party.official_home_url))
-        else [],
+        evidence=evidence_list,
         meta=ScoreMeta(topic_version=topic_version, calc_version=calc_version),
     )
     return TopicDetailResponse(

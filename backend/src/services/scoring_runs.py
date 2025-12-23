@@ -65,6 +65,12 @@ def _make_quote(text: str, *, max_len: int = 280) -> str:
         return ""
     return t[:max_len]
 
+def _toggle_trailing_slash(url: str) -> str:
+    u = (url or "").strip()
+    if not u:
+        return ""
+    return u[:-1] if u.endswith("/") else (u + "/")
+
 
 def _pick_search_client(*, provider: str, openai_model: str | None, gemini_model: str | None, debug: bool):
     p = (provider or "auto").lower()
@@ -317,6 +323,26 @@ def run_topic_scoring(
             if resp is not None:
                 status = int(getattr(resp, "status_code", 0) or 0)
                 if status == 404:
+                    alt = _toggle_trailing_slash(url)
+                    if alt and alt != url:
+                        try:
+                            resp2 = fetcher.client.get(alt, timeout=fetcher.client.timeout)
+                        except Exception:
+                            resp2 = None
+                        if resp2 is not None:
+                            status2 = int(getattr(resp2, "status_code", 0) or 0)
+                            if 200 <= status2 < 400:
+                                try:
+                                    text2 = html_to_text(resp2.text)
+                                except Exception:
+                                    text2 = ""
+                                text2 = (text2 or "").strip()
+                                if text2:
+                                    quote_by_url[alt] = quote or _make_quote(text2)
+                                    docs_by_party[party_name].append(PolicyDocument(url=alt, content=text2[:max_doc_chars]))
+                                    if len(docs_by_party[party_name]) >= max_evidence_per_party:
+                                        break
+                                    continue
                     continue  # 実在しないURLは採用しない
                 if 200 <= status < 400:
                     try:
@@ -331,12 +357,8 @@ def run_topic_scoring(
                             break
                         continue
 
-            # 取得できない/ブロックされる場合でも、URL自体は使えることがある（403等）
-            if quote:
-                quote_by_url[url] = quote
-                docs_by_party[party_name].append(PolicyDocument(url=url, content=quote[:max_doc_chars]))
-                if len(docs_by_party[party_name]) >= max_evidence_per_party:
-                    break
+            # 取得できないURLは根拠として採用しない（URLハルシネーション対策）
+            continue
 
     # フォールバック: 根拠URLが取れない党でも公式トップだけは投入してスコアリング対象にする
     for p in resolved:
@@ -411,6 +433,10 @@ def run_topic_scoring(
             party = party_by_name.get(party_name)
         if not party:
             continue
+
+        official_url = official_url_by_party.get(party_name, party.official_home_url or "")
+        doc_urls = [d.url for d in (docs_by_party.get(party_name) or []) if getattr(d, "url", None)]
+        non_home_doc_urls = [u for u in doc_urls if not _is_homepage_url(u, official_url)]
         # スコアリングLLMが返すevidence_urlはハルシネーションの可能性があるため、
         # 収集した根拠URL（取得/検証済み）に含まれる場合のみ採用する。
         candidate_url = (r.evidence_url or "").strip() if getattr(r, "evidence_url", None) else ""
@@ -418,6 +444,22 @@ def run_topic_scoring(
             evidence_url = candidate_url
         else:
             evidence_url = first_doc_url_by_party.get(party_name)
+
+        if not evidence_url:
+            evidence_url = (non_home_doc_urls[0] if non_home_doc_urls else (doc_urls[0] if doc_urls else None))
+
+        evidence_quote = (quote_by_url.get(evidence_url) if evidence_url else None) or None
+
+        evidence_items: list[dict[str, str]] = []
+        if evidence_url:
+            evidence_items.append({"url": evidence_url, "quote": evidence_quote or ""})
+        for u in non_home_doc_urls:
+            if len(evidence_items) >= max(1, int(max_evidence_per_party)):
+                break
+            if u == evidence_url:
+                continue
+            evidence_items.append({"url": u, "quote": quote_by_url.get(u, "")})
+
         db.add(
             models.TopicScore(
                 run_id=run.run_id,
@@ -428,12 +470,8 @@ def run_topic_scoring(
                 confidence=float(r.confidence),
                 rationale=r.rationale or "",
                 evidence_url=evidence_url,
-                evidence_quote=(quote_by_url.get(evidence_url) if evidence_url else None),
-                evidence=(
-                    [{"url": evidence_url, "quote": quote_by_url.get(evidence_url, "")}]
-                    if evidence_url
-                    else []
-                ),
+                evidence_quote=evidence_quote,
+                evidence=evidence_items,
             )
         )
 
