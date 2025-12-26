@@ -84,7 +84,7 @@ python -m http.server 5173
 ## UI操作方法（現時点）
 
 ### 1) 管理UI（`/admin.html`）
-![kanriUI](JPG/adminUI1.jpg) 
+![kanriUI](JPG/AdminUI1.jpg) 
 
 **A. 初期設定**
 1. `API Base` にバックエンドURL（例: `http://localhost:8000`）を入力
@@ -101,8 +101,8 @@ python -m http.server 5173
 2. 「追加/更新」を押す
 
 **D. ルーブリック生成 → 有効化**
-![kanriUI](JPG/adminUI2.jpg) 
-![kanriUI](JPG/adminUI3.jpg) 
+![kanriUI](JPG/AdminUI2.jpg) 
+![kanriUI](JPG/AdminUI3.jpg) 
 1. トピックを選択
 2. 「ルーブリック生成（ドラフト）」で必要なら `axis` ヒントや `steps_count` を入力
 3. 「生成して保存（POST）」を押す
@@ -110,7 +110,7 @@ python -m http.server 5173
 5. 「Activate（POST）」で有効化（同一トピックの既存activeはarchivedへ）
 
 **E. 政党レジストリ（自動取得/手動/編集）**
-![kanriUI](JPG/adminUI4.jpg)
+![kanriUI](JPG/AdminUI4.jpg)
 - 自動取得: 「自動取得クエリ」を必要に応じて調整 → 「自動取得して反映」
 - 手動登録: `name_ja` / `official_home_url` / `allowed_domains` 等を入力 → 「登録（POST）」
 - 個別編集: 一覧の政党をクリック → フォームに反映 → `official_home_url` や `evidence(JSON)` を編集 → 「更新（PATCH）」
