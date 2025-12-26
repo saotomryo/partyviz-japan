@@ -27,12 +27,13 @@ const generateRubricBtn = document.getElementById("generateRubric");
 const refreshRubricsBtn = document.getElementById("refreshRubrics");
 const rubricListEl = document.getElementById("rubricList");
 
-const scoreMaxPartiesEl = document.getElementById("scoreMaxParties");
 const scoreMaxEvidenceEl = document.getElementById("scoreMaxEvidence");
 const scoreIncludeExternalEl = document.getElementById("scoreIncludeExternal");
+const scoreIndexOnlyEl = document.getElementById("scoreIndexOnly");
 const runScoringBtn = document.getElementById("runScoring");
 const loadLatestScoresBtn = document.getElementById("loadLatestScores");
 const scoreResultEl = document.getElementById("scoreResult");
+const scorePartyCountEl = document.getElementById("scorePartyCount");
 const downloadSnapshotBtn = document.getElementById("downloadSnapshot");
 
 const openaiSearchModelEl = document.getElementById("openaiSearchModel");
@@ -46,11 +47,13 @@ const partyHomeUrlEl = document.getElementById("partyHomeUrl");
 const partyDomainsEl = document.getElementById("partyDomains");
 const partyConfidenceEl = document.getElementById("partyConfidence");
 const partyStatusEl = document.getElementById("partyStatus");
+const partyPolicyUrlsEl = document.getElementById("partyPolicyUrls");
 const partyEvidenceEl = document.getElementById("partyEvidence");
 const createPartyBtn = document.getElementById("createParty");
 const updatePartyBtn = document.getElementById("updateParty");
 const clearPartyFormBtn = document.getElementById("clearPartyForm");
 const refreshPartiesBtn = document.getElementById("refreshParties");
+const crawlPolicySourcesBtn = document.getElementById("crawlPolicySources");
 const partyListEl = document.getElementById("partyList");
 const selectedPartyIdEl = document.getElementById("selectedPartyId");
 const partyDiscoverQueryEl = document.getElementById("partyDiscoverQuery");
@@ -403,6 +406,17 @@ function selectParty(party) {
   partyConfidenceEl.value = party.confidence ?? 0;
   partyStatusEl.value = party.status || "candidate";
   partyEvidenceEl.value = JSON.stringify(party.evidence || {}, null, 2);
+  if (partyPolicyUrlsEl) partyPolicyUrlsEl.value = "";
+  if (party && party.party_id) {
+    request(`/admin/parties/${encodeURIComponent(party.party_id)}/policy-sources`)
+      .then((res) => {
+        const urls = (res.sources || []).map((s) => s.base_url).filter(Boolean);
+        if (partyPolicyUrlsEl) partyPolicyUrlsEl.value = urls.join("\n");
+      })
+      .catch(() => {
+        if (partyPolicyUrlsEl) partyPolicyUrlsEl.value = "";
+      });
+  }
 }
 
 function clearPartyForm() {
@@ -414,6 +428,7 @@ function clearPartyForm() {
   partyConfidenceEl.value = 0.5;
   partyStatusEl.value = "candidate";
   partyEvidenceEl.value = "";
+  if (partyPolicyUrlsEl) partyPolicyUrlsEl.value = "";
 }
 
 function renderScores(run) {
@@ -465,9 +480,9 @@ async function runScoring() {
       search_gemini_model: (geminiSearchModelEl.value || "").trim() || null,
       score_openai_model: (openaiRubricModelEl.value || "").trim() || null,
       score_gemini_model: (geminiRubricModelEl.value || "").trim() || null,
-      max_parties: Number(scoreMaxPartiesEl.value || 10),
       max_evidence_per_party: Number(scoreMaxEvidenceEl.value || 2),
-      include_external: true,
+      include_external: Boolean(scoreIncludeExternalEl && scoreIncludeExternalEl.checked),
+      index_only: Boolean(scoreIndexOnlyEl && scoreIndexOnlyEl.checked),
     };
     const run = await request(`/admin/topics/${encodeURIComponent(selectedTopic.topic_id)}/scores/run`, {
       method: "POST",
@@ -495,8 +510,15 @@ async function loadParties() {
   try {
     const parties = await request("/admin/parties");
     renderParties(parties);
+    if (scorePartyCountEl) {
+      const activeCount = (parties || []).filter((p) => (p.status || "") !== "rejected").length;
+      scorePartyCountEl.textContent = String(activeCount);
+    }
   } catch (e) {
     partyListEl.innerHTML = `<p class="muted">取得失敗: ${e.message}</p>`;
+    if (scorePartyCountEl) {
+      scorePartyCountEl.textContent = "-";
+    }
   }
 }
 
@@ -533,6 +555,16 @@ async function updateParty() {
       method: "PATCH",
       body: { name_ja, official_home_url, allowed_domains, confidence, status, evidence },
     });
+    if (partyPolicyUrlsEl) {
+      const base_urls = (partyPolicyUrlsEl.value || "")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await request(`/admin/parties/${encodeURIComponent(party_id)}/policy-sources`, {
+        method: "PUT",
+        body: { base_urls },
+      });
+    }
     selectParty(updated);
     await loadParties();
   } catch (e) {
@@ -566,10 +598,23 @@ async function createParty() {
   }
 
   try {
-    await request("/admin/parties", {
+    const created = await request("/admin/parties", {
       method: "POST",
       body: { name_ja, official_home_url, allowed_domains, confidence, status, evidence },
     });
+    if (partyPolicyUrlsEl) {
+      const base_urls = (partyPolicyUrlsEl.value || "")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (base_urls.length) {
+        await request(`/admin/parties/${encodeURIComponent(created.party_id)}/policy-sources`, {
+          method: "PUT",
+          body: { base_urls },
+        });
+      }
+    }
+    selectParty(created);
     await loadParties();
   } catch (e) {
     alert(`登録失敗: ${e.message}`);
@@ -648,6 +693,20 @@ createPartyBtn.addEventListener("click", createParty);
 updatePartyBtn.addEventListener("click", updateParty);
 clearPartyFormBtn.addEventListener("click", clearPartyForm);
 discoverPartiesBtn.addEventListener("click", discoverParties);
+crawlPolicySourcesBtn?.addEventListener("click", async () => {
+  if (!selectedParty) {
+    alert("先に一覧から政党を選択してください");
+    return;
+  }
+  try {
+    const resp = await request(`/admin/parties/${encodeURIComponent(selectedParty.party_id)}/policy-sources/crawl`, {
+      method: "POST",
+    });
+    alert(`クロール完了: html=${resp.stats?.fetched_html ?? 0}, pdf=${resp.stats?.fetched_pdf ?? 0}, skipped=${resp.stats?.skipped ?? 0}`);
+  } catch (e) {
+    alert(`クロール失敗: ${e.message}`);
+  }
+});
 purgePartiesBtn.addEventListener("click", () => purge(["parties", "events"]));
 purgeTopicsBtn.addEventListener("click", () => purge(["topics"]));
 purgeAllBtn.addEventListener("click", () => purge(["all"]));

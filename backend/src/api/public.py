@@ -7,7 +7,16 @@ from sqlalchemy import select
 
 from ..db import get_db
 from ..db import models
-from ..schemas import Evidence, ScoreItem, ScoreMeta, Topic, TopicDetailResponse, TopicPositionsResponse, TopicsResponse
+from ..schemas import (
+    Evidence,
+    ScoreItem,
+    ScoreMeta,
+    Topic,
+    TopicDetailResponse,
+    TopicPositionsResponse,
+    TopicRubricResponse,
+    TopicsResponse,
+)
 from ..services import public_data
 
 
@@ -179,6 +188,14 @@ def get_topic_positions(
         axis_b_label=axis_right,
         scores=items,
     )
+
+
+@router.get("/topics/{topic_id}/rubric", response_model=TopicRubricResponse)
+def get_topic_rubric(topic_id: str, db: Session = Depends(get_db)) -> TopicRubricResponse:
+    rubric = public_data.get_active_rubric(db, topic_id)
+    if not rubric:
+        raise HTTPException(status_code=404, detail="rubric not found")
+    return TopicRubricResponse.model_validate(rubric)
 
 
 @router.get("/entities/{entity_id}/topics/{topic_id}/detail", response_model=TopicDetailResponse)

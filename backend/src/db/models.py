@@ -91,6 +91,42 @@ class PartyRegistry(Base):
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
 
 
+class PartyPolicySource(Base):
+    __tablename__ = "party_policy_sources"
+
+    source_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    party_id = Column(UUID(as_uuid=True), ForeignKey("party_registry.party_id", ondelete="CASCADE"), nullable=False)
+    base_url = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, server_default=text("'active'"))
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+
+
+class PolicyDocument(Base):
+    __tablename__ = "policy_documents"
+
+    doc_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    party_id = Column(UUID(as_uuid=True), ForeignKey("party_registry.party_id", ondelete="CASCADE"), nullable=False)
+    url = Column(Text, nullable=False, unique=True)
+    doc_type = Column(Text, nullable=False)  # html|pdf
+    title = Column(Text)
+    content_text = Column(Text)
+    fetched_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
+    hash = Column(Text)
+
+
+class PolicyChunk(Base):
+    __tablename__ = "policy_chunks"
+
+    chunk_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    doc_id = Column(UUID(as_uuid=True), ForeignKey("policy_documents.doc_id", ondelete="CASCADE"), nullable=False)
+    party_id = Column(UUID(as_uuid=True), ForeignKey("party_registry.party_id", ondelete="CASCADE"), nullable=False)
+    chunk_index = Column(sa.Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    embedding = Column(Text)  # placeholder (pgvector導入時に型変更)
+    meta = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+
+
 class PartyDiscoveryEvent(Base):
     __tablename__ = "party_discovery_events"
 

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import models
-from ..schemas import Evidence, ScoreItem, ScoreMeta, Topic, TopicDetailResponse, TopicPositionsResponse
+from ..schemas import Evidence, ScoreItem, ScoreMeta, Topic, TopicDetailResponse, TopicPositionsResponse, TopicRubricResponse
 from . import public_data
 
 
@@ -194,7 +194,11 @@ def build_snapshot(db: Session) -> dict[str, Any]:
     positions_mixed: dict[str, Any] = {}
     runs: dict[str, Any] = {}
     runs_mixed: dict[str, Any] = {}
+    rubrics: dict[str, Any] = {}
     for t in topics:
+        rubric = public_data.get_active_rubric(db, t.topic_id)
+        if rubric:
+            rubrics[t.topic_id] = TopicRubricResponse.model_validate(rubric).model_dump(mode="json")
         p = build_topic_positions(db, t.topic_id, scope="official")
         if p:
             positions[t.topic_id] = p.model_dump(mode="json")
@@ -234,4 +238,5 @@ def build_snapshot(db: Session) -> dict[str, Any]:
         "positions_mixed": positions_mixed,
         "runs": runs,
         "runs_mixed": runs_mixed,
+        "rubrics": rubrics,
     }

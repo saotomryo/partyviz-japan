@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PartyViz - 評価基準</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <p class="eyebrow">PartyViz</p>
+      <h1>評価基準</h1>
+      <p class="lede">スコアリングで使っているルーブリックの内容を確認できます。</p>
+      <div class="controls">
+        <a class="button-link" href="index.html">← トップへ戻る</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout layout--single">
+    <section class="content" style="width: 100%;">
+      <div class="content__header">
+        <div>
+          <p class="eyebrow" id="rubricTopicId">topic</p>
+          <h2 id="rubricTopicName">読み込み中...</h2>
+          <p class="muted" id="rubricTopicDescription"></p>
+        </div>
+        <div class="badge" id="rubricVersion">version</div>
+      </div>
+
+      <div class="rubric-view" id="rubricBody">
+        <p class="muted">評価基準を読み込んでいます。</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="rubric.js"></script>
+</body>
+</html>

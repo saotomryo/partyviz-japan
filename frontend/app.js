@@ -9,6 +9,7 @@ const topicIdEl = document.getElementById("selectedTopicId");
 const topicNameEl = document.getElementById("selectedTopicName");
 const topicDescEl = document.getElementById("selectedTopicDescription");
 const modeBadgeEl = document.getElementById("modeBadge");
+const rubricLinkEl = document.getElementById("rubricLink");
 const overlayEl = document.getElementById("detailOverlay");
 const overlayCloseBtn = document.getElementById("overlayClose");
 const detailContentEl = document.getElementById("detailContent");
@@ -17,6 +18,7 @@ const adminLinkEl = document.getElementById("adminLink");
 let selectedTopicId = null;
 let snapshotData = null;
 let dataSource = "api";
+let snapshotUrlUsed = DEFAULT_SNAPSHOT_URL;
 
 function getQueryParam(key) {
   const url = new URL(window.location.href);
@@ -35,6 +37,7 @@ async function tryLoadSnapshot() {
     getQueryParam("snapshot") ||
     (localStorage.getItem("partyviz_public_snapshot_url") || "").trim() ||
     DEFAULT_SNAPSHOT_URL;
+  snapshotUrlUsed = snapshotUrl;
 
   try {
     const res = await fetch(snapshotUrl, { cache: "no-cache" });
@@ -57,6 +60,9 @@ async function tryLoadSnapshot() {
 function applyUiForDataSource() {
   if (dataSource === "snapshot" && adminLinkEl) {
     adminLinkEl.remove();
+  }
+  if (rubricLinkEl) {
+    rubricLinkEl.classList.add("hidden");
   }
 }
 
@@ -185,6 +191,30 @@ function renderTopics(topics) {
   });
 }
 
+function buildRubricLink(topicId) {
+  if (!topicId) return null;
+  const params = new URLSearchParams({ topic: topicId });
+  if (dataSource === "snapshot") {
+    params.set("source", "snapshot");
+    if (snapshotUrlUsed) params.set("snapshot", snapshotUrlUsed);
+  }
+  return `rubric.html?${params.toString()}`;
+}
+
+function updateRubricLink(positions) {
+  if (!rubricLinkEl) return;
+  const topicId = positions?.topic?.topic_id || selectedTopicId;
+  const version = positions?.rubric_version ?? null;
+  const url = buildRubricLink(topicId);
+  if (!url || version === null) {
+    rubricLinkEl.classList.add("hidden");
+    return;
+  }
+  rubricLinkEl.classList.remove("hidden");
+  rubricLinkEl.href = url;
+  rubricLinkEl.textContent = `評価基準を見る（v${version}）`;
+}
+
 function renderPositionsBlock(data, scopeLabel, scopeValue) {
   const { topic, mode, scores, axis_a_label, axis_b_label } = data;
   if (!scores || scores.length === 0) {
@@ -276,8 +306,10 @@ function renderPositionsBlock(data, scopeLabel, scopeValue) {
       <div class="plot__header">
         <div>
           <div class="rubric-meta">${scopeLabel}</div>
-          <div class="plot__axis-label plot__axis-label--left">-100: ${leftLabel}</div>
-          <div class="plot__axis-label plot__axis-label--right">+100: ${rightLabel}</div>
+          <div class="plot__axis-head">
+            <div class="plot__axis-label plot__axis-label--left">-100: ${leftLabel}</div>
+            <div class="plot__axis-label plot__axis-label--right">+100: ${rightLabel}</div>
+          </div>
         </div>
       </div>
       <div class="plot-legend">${legend}</div>
@@ -397,6 +429,7 @@ async function loadPositions() {
       blocks.push(renderPositionsBlock(mixedData, "公式＋外部（mixed）", "mixed"));
     }
     positionsEl.innerHTML = blocks.join("");
+    updateRubricLink(officialData);
     positionsEl.querySelectorAll("button.plot-dot, button.plot-axis__dot").forEach((btn) => {
       btn.addEventListener("click", () => {
         openDetail(btn.dataset.entity, btn.dataset.topic, btn.dataset.mode, btn.dataset.scope);

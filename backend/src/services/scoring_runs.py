@@ -18,7 +18,7 @@ from ..agents.scorer import ScoringAgent
 from ..agents.text_extract import html_to_text
 from ..db import models
 from ..settings import settings
-from . import topic_rubrics
+from . import policy_index, topic_rubrics
 
 
 def _now_iso() -> str:
@@ -112,9 +112,10 @@ def run_topic_scoring(
     score_provider: str = "auto",
     score_openai_model: str | None = None,
     score_gemini_model: str | None = None,
-    max_parties: int = 10,
+    max_parties: int | None = None,
     max_evidence_per_party: int = 2,
     max_doc_chars: int = 8000,
+    index_only: bool = False,
     debug: bool = False,
 ) -> models.ScoreRun:
     scope_norm = (scope or "official").strip().lower()
@@ -148,7 +149,8 @@ def run_topic_scoring(
             .order_by(models.PartyRegistry.created_at.desc())
         )
     )
-    parties = parties[: max(1, int(max_parties))]
+    if max_parties is not None:
+        parties = parties[: max(1, int(max_parties))]
 
     resolved: list[ResolvedParty] = []
     party_by_name: dict[str, models.PartyRegistry] = {}
@@ -166,12 +168,15 @@ def run_topic_scoring(
         party_by_name[p.name_ja] = p
         resolved_name_by_canonical[_canonicalize_name_ja(p.name_ja)] = p.name_ja
 
-    used_search_provider, search_client = _pick_search_client(
-        provider=search_provider,
-        openai_model=search_openai_model,
-        gemini_model=search_gemini_model,
-        debug=debug,
-    )
+    used_search_provider = None
+    search_client = None
+    if not index_only:
+        used_search_provider, search_client = _pick_search_client(
+            provider=search_provider,
+            openai_model=search_openai_model,
+            gemini_model=search_gemini_model,
+            debug=debug,
+        )
 
     used_score_provider, score_client = _pick_score_client(
         provider=score_provider,
@@ -183,7 +188,10 @@ def run_topic_scoring(
     subkeywords: list[str] = list(getattr(topic, "search_subkeywords", None) or [])
     subkw_text = " ".join(subkeywords)
 
-    # 根拠URLのハルシネーションを減らすため、政党ごとに検索する
+    docs_by_party: Dict[str, List[PolicyDocument]] = {p.name_ja: [] for p in resolved}
+    quote_by_url: dict[str, str] = {}
+    official_url_by_party: dict[str, str] = {p.name_ja: p.official_url for p in resolved}
+
     evidence_list: list = []
     per_party_queries: dict[str, list[str]] = {}
     per_party_query_used: dict[str, str | None] = {}
@@ -193,79 +201,109 @@ def run_topic_scoring(
     evidence_payload_by_party: dict[str, dict | None] = {}
     candidate_urls_by_party: dict[str, list[str]] = {}
     url_checks_by_party: dict[str, list[dict[str, str | int]]] = {}
-    for p in resolved:
-        host = (urlparse(p.official_url).netloc or "").lower()
-        base = host.removeprefix("www.") if hasattr(host, "removeprefix") else (host[4:] if host.startswith("www.") else host)
-        if used_search_provider == "openai":
-            # OpenAI web_search では filters.allowed_domains でドメイン絞り込みできるため、site: は付けない（精度/ヒット率を優先）
-            variants = [
-                f"{topic_text} {subkw_text} 政策 公約",
-                f"{topic_text} {subkw_text} 提言 マニフェスト",
-                f"{topic_text} {subkw_text}",
-            ]
-        else:
-            if allow_external:
+    index_hits_count_by_party: dict[str, int] = {}
+    index_fallback_used_by_party: dict[str, bool] = {}
+
+    if index_only:
+        index_queries = [topic_text, *list(subkeywords or [])]
+        max_chunks = max(3, int(max_evidence_per_party) * 2)
+        per_query = max(1, int(max_evidence_per_party))
+        for p in resolved:
+            hits = policy_index.search_policy_chunks(
+                db,
+                party_id=party_by_name[p.name_ja].party_id,
+                queries=index_queries,
+                per_query=per_query,
+                max_total=max_chunks,
+            )
+            index_hits_count_by_party[p.name_ja] = len(hits)
+            per_party_queries[p.name_ja] = list(index_queries)
+            per_party_query_used[p.name_ja] = "index"
+            per_party_attempts_by_party[p.name_ja] = 1
+            for hit in hits:
+                chunk = hit.chunk
+                meta = chunk.meta if isinstance(chunk.meta, dict) else {}
+                url = (meta.get("source_url") or "").strip()
+                content = (chunk.content or "").strip()
+                if not url or not content:
+                    continue
+                docs_by_party[p.name_ja].append(PolicyDocument(url=url, content=content[:max_doc_chars]))
+                if url not in quote_by_url:
+                    quote_by_url[url] = _make_quote(content)
+            if docs_by_party[p.name_ja]:
+                candidate_urls_by_party[p.name_ja] = [d.url for d in docs_by_party[p.name_ja]]
+    else:
+        # 根拠URLのハルシネーションを減らすため、政党ごとに検索する
+        for p in resolved:
+            host = (urlparse(p.official_url).netloc or "").lower()
+            base = host.removeprefix("www.") if hasattr(host, "removeprefix") else (host[4:] if host.startswith("www.") else host)
+            if used_search_provider == "openai":
+                # OpenAI web_search では filters.allowed_domains でドメイン絞り込みできるため、site: は付けない（精度/ヒット率を優先）
                 variants = [
                     f"{topic_text} {subkw_text} 政策 公約",
                     f"{topic_text} {subkw_text} 提言 マニフェスト",
                     f"{topic_text} {subkw_text}",
                 ]
             else:
-                # Geminiはドメイン絞り込みが弱いので site: を付けて寄せる
-                variants = [
-                    f"site:{base} {topic_text} {subkw_text} 政策 公約",
-                    f"site:{base} {topic_text} {subkw_text} 提言 マニフェスト",
-                    f"site:{base} {topic_text} {subkw_text}",
-                ]
-        variants = [" ".join(v.split()).strip() for v in variants if v and v.strip()]
-        per_party_queries[p.name_ja] = variants
-        per_party_query_used[p.name_ja] = None
-        per_party_attempts_by_party[p.name_ja] = 0
-        if used_search_provider == "openai":
-            openai_usage_by_party[p.name_ja] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-
-        for query in variants:
-            per_party_attempts_by_party[p.name_ja] += 1
-            topic_with_query = f"{topic_text}\n検索クエリ: {query}"
-            res = search_client.find_policy_evidence_bulk(
-                topic=topic_with_query,
-                parties=[p],
-                max_per_party=max_evidence_per_party,
-                allowed_domains=([] if allow_external and used_search_provider == "openai" else None),
-            )
-            evidence_list.extend(res or [])
-            grounding_urls_by_party[p.name_ja] = list(getattr(search_client, "last_grounding_urls", None) or [])
+                if allow_external:
+                    variants = [
+                        f"{topic_text} {subkw_text} 政策 公約",
+                        f"{topic_text} {subkw_text} 提言 マニフェスト",
+                        f"{topic_text} {subkw_text}",
+                    ]
+                else:
+                    # Geminiはドメイン絞り込みが弱いので site: を付けて寄せる
+                    variants = [
+                        f"site:{base} {topic_text} {subkw_text} 政策 公約",
+                        f"site:{base} {topic_text} {subkw_text} 提言 マニフェスト",
+                        f"site:{base} {topic_text} {subkw_text}",
+                    ]
+            variants = [" ".join(v.split()).strip() for v in variants if v and v.strip()]
+            per_party_queries[p.name_ja] = variants
+            per_party_query_used[p.name_ja] = None
+            per_party_attempts_by_party[p.name_ja] = 0
             if used_search_provider == "openai":
-                usage = getattr(search_client, "last_usage", None) or {}
-                if isinstance(usage, dict):
-                    for k in ("input_tokens", "output_tokens", "total_tokens"):
-                        v = usage.get(k)
-                        if isinstance(v, int):
-                            openai_usage_by_party[p.name_ja][k] = int(openai_usage_by_party[p.name_ja].get(k, 0)) + int(v)
-            evidence_payload_by_party[p.name_ja] = getattr(search_client, "last_evidence_payload", None)
-            has_any = False
-            for it in res or []:
-                if (it.party_name or "") == p.name_ja and getattr(it, "evidence", None):
-                    has_any = True
-                    break
-            if has_any:
-                per_party_query_used[p.name_ja] = query
-                urls = []
+                openai_usage_by_party[p.name_ja] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+            for query in variants:
+                per_party_attempts_by_party[p.name_ja] += 1
+                topic_with_query = f"{topic_text}\n検索クエリ: {query}"
+                res = search_client.find_policy_evidence_bulk(
+                    topic=topic_with_query,
+                    parties=[p],
+                    max_per_party=max_evidence_per_party,
+                    allowed_domains=([] if allow_external and used_search_provider == "openai" else None),
+                )
+                evidence_list.extend(res or [])
+                grounding_urls_by_party[p.name_ja] = list(getattr(search_client, "last_grounding_urls", None) or [])
+                if used_search_provider == "openai":
+                    usage = getattr(search_client, "last_usage", None) or {}
+                    if isinstance(usage, dict):
+                        for k in ("input_tokens", "output_tokens", "total_tokens"):
+                            v = usage.get(k)
+                            if isinstance(v, int):
+                                openai_usage_by_party[p.name_ja][k] = int(openai_usage_by_party[p.name_ja].get(k, 0)) + int(v)
+                evidence_payload_by_party[p.name_ja] = getattr(search_client, "last_evidence_payload", None)
+                has_any = False
                 for it in res or []:
-                    if (it.party_name or "") != p.name_ja:
-                        continue
-                    for ev in list(getattr(it, "evidence", None) or []):
-                        url = (getattr(ev, "evidence_url", None) or "").strip()
-                        if url:
-                            urls.append(url)
-                if urls:
-                    candidate_urls_by_party[p.name_ja] = urls
-                break
+                    if (it.party_name or "") == p.name_ja and getattr(it, "evidence", None):
+                        has_any = True
+                        break
+                if has_any:
+                    per_party_query_used[p.name_ja] = query
+                    urls = []
+                    for it in res or []:
+                        if (it.party_name or "") != p.name_ja:
+                            continue
+                        for ev in list(getattr(it, "evidence", None) or []):
+                            url = (getattr(ev, "evidence_url", None) or "").strip()
+                            if url:
+                                urls.append(url)
+                    if urls:
+                        candidate_urls_by_party[p.name_ja] = urls
+                    break
 
     fetcher = HttpxFetcher(timeout=30)
-    docs_by_party: Dict[str, List[PolicyDocument]] = {p.name_ja: [] for p in resolved}
-    quote_by_url: dict[str, str] = {}
-    official_url_by_party: dict[str, str] = {p.name_ja: p.official_url for p in resolved}
     def _expand_domains(domains: list[str]) -> list[str]:
         out: set[str] = set()
         for d in domains or []:
@@ -412,6 +450,40 @@ def run_topic_scoring(
             # 取得できないURLは根拠として採用しない（URLハルシネーション対策）
             continue
 
+    if not index_only:
+        index_queries = [topic_text, *list(subkeywords or [])]
+        max_chunks = max(3, int(max_evidence_per_party) * 2)
+        max_docs = max(3, int(max_evidence_per_party) * 2)
+        per_query = max(1, int(max_evidence_per_party))
+        for p in resolved:
+            party_name = p.name_ja
+            hits = policy_index.search_policy_chunks(
+                db,
+                party_id=party_by_name[party_name].party_id,
+                queries=index_queries,
+                per_query=per_query,
+                max_total=max_chunks,
+            )
+            index_hits_count_by_party[party_name] = len(hits)
+            if not hits:
+                continue
+            docs = docs_by_party.get(party_name) or []
+            seen_urls: set[str] = {d.url for d in docs if d.url}
+            for hit in hits:
+                if len(docs_by_party[party_name]) >= max_docs:
+                    break
+                chunk = hit.chunk
+                meta = chunk.meta if isinstance(chunk.meta, dict) else {}
+                url = (meta.get("source_url") or "").strip()
+                content = (chunk.content or "").strip()
+                if not url or not content or url in seen_urls:
+                    continue
+                docs_by_party[party_name].append(PolicyDocument(url=url, content=content[:max_doc_chars]))
+                seen_urls.add(url)
+                index_fallback_used_by_party[party_name] = True
+                if url not in quote_by_url:
+                    quote_by_url[url] = _make_quote(content)
+
     # フォールバック: 根拠URLが取れない党でも公式トップだけは投入してスコアリング対象にする
     for p in resolved:
         if docs_by_party.get(p.name_ja):
@@ -459,17 +531,22 @@ def run_topic_scoring(
         meta={
             "scope": scope_norm,
             "topic_text": topic_text,
+            "retrieval_mode": "index" if index_only else "search",
+            "index_only": index_only,
             "max_parties": max_parties,
             "max_evidence_per_party": max_evidence_per_party,
             "created_at": _now_iso(),
             "evidence_search": {
-                "last_error": getattr(search_client, "last_error", None),
+                "mode": "index" if index_only else "search",
+                "last_error": (getattr(search_client, "last_error", None) if search_client else None),
                 "per_party_queries": per_party_queries,
                 "per_party_query_used": per_party_query_used,
                 "subkeywords": subkeywords,
+                "index_hits_count_by_party": index_hits_count_by_party,
+                "index_fallback_used_by_party": index_fallback_used_by_party,
                 "grounding_urls_count_by_party": {k: len(v or []) for k, v in grounding_urls_by_party.items()},
                 "per_party_attempts_by_party": per_party_attempts_by_party,
-                "openai_usage_by_party": openai_usage_by_party if used_search_provider == "openai" else None,
+                "openai_usage_by_party": (openai_usage_by_party if used_search_provider == "openai" else None),
                 "evidence_payload_by_party": evidence_payload_by_party,
             },
             "results_raw": [asdict(r) for r in results],
@@ -543,6 +620,8 @@ def run_topic_scoring(
                 "topic_id": topic_id,
                 "scope": scope_norm,
                 "topic_text": topic_text,
+                "retrieval_mode": "index" if index_only else "search",
+                "index_only": index_only,
                 "search_provider": used_search_provider,
                 "score_provider": used_score_provider,
                 "search_model": getattr(search_client, "model", None),
@@ -554,6 +633,8 @@ def run_topic_scoring(
                 "per_party_queries": per_party_queries,
                 "per_party_query_used": per_party_query_used,
                 "per_party_attempts": per_party_attempts_by_party,
+                "index_hits_count_by_party": index_hits_count_by_party,
+                "index_fallback_used_by_party": index_fallback_used_by_party,
                 "grounding_urls_count_by_party": {k: len(v or []) for k, v in grounding_urls_by_party.items()},
                 "candidate_urls_by_party": candidate_urls_by_party,
                 "allowed_domains_by_party": allowed_domains_by_party,
