@@ -2,9 +2,15 @@ const DEFAULT_API_BASE = "http://localhost:8000";
 const DEFAULT_SNAPSHOT_URL = "./data/snapshot.json";
 
 const topicListEl = document.getElementById("topicList");
+const topicSelectEl = document.getElementById("topicSelect");
+const topicSelectXEl = document.getElementById("topicSelectX");
+const topicSelectYEl = document.getElementById("topicSelectY");
+const axisTopicSelectorsEl = document.getElementById("axisTopicSelectors");
 const positionsEl = document.getElementById("positions");
 const modeSelect = document.getElementById("modeSelect");
 const entitySelect = document.getElementById("entitySelect");
+const viewModeSelectEl = document.getElementById("viewModeSelect");
+const themeSelectEl = document.getElementById("themeSelect");
 const topicIdEl = document.getElementById("selectedTopicId");
 const topicNameEl = document.getElementById("selectedTopicName");
 const topicDescEl = document.getElementById("selectedTopicDescription");
@@ -19,6 +25,8 @@ let selectedTopicId = null;
 let snapshotData = null;
 let dataSource = "api";
 let snapshotUrlUsed = DEFAULT_SNAPSHOT_URL;
+let topicsCache = [];
+let themeName = "midnight";
 
 function getQueryParam(key) {
   const url = new URL(window.location.href);
@@ -64,6 +72,16 @@ function applyUiForDataSource() {
   if (rubricLinkEl) {
     rubricLinkEl.classList.add("hidden");
   }
+}
+
+function applyTheme(theme) {
+  const themeValue = (theme || "midnight").toLowerCase();
+  document.body.classList.remove("theme-dawn", "theme-sunny");
+  if (themeValue === "dawn") document.body.classList.add("theme-dawn");
+  if (themeValue === "sunny") document.body.classList.add("theme-sunny");
+  themeName = themeValue;
+  if (themeSelectEl) themeSelectEl.value = themeValue;
+  localStorage.setItem("partyviz_public_theme", themeValue);
 }
 
 async function fetchJSON(url) {
@@ -166,29 +184,36 @@ function escapeAttr(str) {
 }
 
 function renderTopics(topics) {
-  topicListEl.innerHTML = "";
-  topics.forEach((t, idx) => {
-    const li = document.createElement("li");
-    li.className = "topic-item";
-    li.innerHTML = `
-      <p class="eyebrow">${t.topic_id}</p>
-      <p class="title">${t.name}</p>
-      <p class="muted">${t.description || ""}</p>
-    `;
-    li.addEventListener("click", () => {
-      selectedTopicId = t.topic_id;
-      document.querySelectorAll(".topic-item").forEach(el => el.classList.remove("active"));
-      li.classList.add("active");
-      topicIdEl.textContent = t.topic_id;
-      topicNameEl.textContent = t.name;
-      topicDescEl.textContent = t.description || "";
-      loadPositions();
+  topicsCache = topics || [];
+  if (topicListEl) topicListEl.innerHTML = "";
+  const fillSelect = (el, items) => {
+    if (!el) return;
+    el.innerHTML = "";
+    items.forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t.topic_id;
+      opt.textContent = `${t.name}`;
+      el.appendChild(opt);
     });
-    topicListEl.appendChild(li);
-    if (idx === 0) {
-      li.click();
-    }
-  });
+  };
+  fillSelect(topicSelectEl, topicsCache);
+  fillSelect(topicSelectXEl, topicsCache);
+  fillSelect(topicSelectYEl, topicsCache);
+  if (topicsCache.length) {
+    selectedTopicId = topicsCache[0].topic_id;
+    if (topicSelectEl) topicSelectEl.value = selectedTopicId;
+    if (topicSelectXEl) topicSelectXEl.value = topicsCache[0].topic_id;
+    if (topicSelectYEl) topicSelectYEl.value = topicsCache[1]?.topic_id || topicsCache[0].topic_id;
+    updateSelectedTopicMeta(selectedTopicId);
+    loadPositions();
+  }
+}
+
+function updateSelectedTopicMeta(topicId) {
+  const topic = topicsCache.find((t) => t.topic_id === topicId);
+  topicIdEl.textContent = topic?.topic_id || "topic";
+  topicNameEl.textContent = topic?.name || "トピックを選択してください";
+  topicDescEl.textContent = topic?.description || "";
 }
 
 function buildRubricLink(topicId) {
@@ -381,6 +406,83 @@ function renderDetail(data) {
   `;
 }
 
+function renderAxisComparison(xData, yData) {
+  const xTopic = xData.topic;
+  const yTopic = yData.topic;
+  const xMap = new Map(xData.scores.map((s) => [s.entity_id, s]));
+  const yMap = new Map(yData.scores.map((s) => [s.entity_id, s]));
+  const scores = [];
+  xMap.forEach((xScore, id) => {
+    const yScore = yMap.get(id);
+    if (!yScore) return;
+    scores.push({ id, x: xScore, y: yScore });
+  });
+  const colorMap = buildPartyColorMap(xData.scores);
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const jitterByKey = new Map();
+  const dots = scores
+    .map((item) => {
+      const percentX = scoreToPercent(item.x.stance_score);
+      const percentY = scoreToPercent(item.y.stance_score);
+      const key = `${Math.round(percentX)}:${Math.round(percentY)}`;
+      const bucket = jitterByKey.get(key) || [];
+      bucket.push(item.id);
+      jitterByKey.set(key, bucket);
+      const idx = bucket.length - 1;
+      const angle = (idx * 137.5) * (Math.PI / 180);
+      const radius = 10 + Math.floor(idx / 6) * 6;
+      const dx = Math.cos(angle) * radius;
+      const dy = Math.sin(angle) * radius;
+      const clampedX = clamp(percentX, 3, 97);
+      const clampedY = clamp(percentY, 3, 97);
+      const color = colorMap.get(item.id) || "#7ad5ff";
+      const name = item.x.entity_name || item.id;
+      const title = `${name} (${item.x.stance_score}, ${item.y.stance_score})`;
+      return `<button class="axis-plot__dot" style="left:${clampedX}%; bottom:${clampedY}%; background:${color}; --dx:${dx.toFixed(1)}px; --dy:${dy.toFixed(1)}px;" title="${escapeAttr(title)}" data-name="${escapeAttr(name)}" data-entity="${item.id}"></button>`;
+    })
+    .join("");
+
+  const legend = scores
+    .slice()
+    .sort((a, b) => (a.x.entity_name || a.id).localeCompare(b.x.entity_name || b.id, "ja"))
+    .map((item) => {
+      const name = item.x.entity_name || item.id;
+      const color = colorMap.get(item.id) || "#7ad5ff";
+      return `<span class="plot-legend__item"><span class="plot-legend__swatch" style="background:${color};"></span>${escapeAttr(name)}</span>`;
+    })
+    .join("");
+
+  return `
+    <div class="axis-plot">
+      <div class="rubric-meta">2軸比較</div>
+      <div class="axis-plot__grid">
+        <div class="axis-plot__zero-x"></div>
+        <div class="axis-plot__zero-y"></div>
+        <div class="axis-plot__axis-label axis-plot__axis-label--x">
+          ${escapeAttr(xTopic.name)}（X）
+        </div>
+        <div class="axis-plot__axis-label axis-plot__axis-label--y">
+          ${escapeAttr(yTopic.name)}（Y）
+        </div>
+        <div class="axis-plot__axis-end axis-plot__axis-end--x-left">
+          -100: ${escapeAttr(xData.axis_a_label || "")}
+        </div>
+        <div class="axis-plot__axis-end axis-plot__axis-end--x-right">
+          +100: ${escapeAttr(xData.axis_b_label || "")}
+        </div>
+        <div class="axis-plot__axis-end axis-plot__axis-end--y-top">
+          +100: ${escapeAttr(yData.axis_b_label || "")}
+        </div>
+        <div class="axis-plot__axis-end axis-plot__axis-end--y-bottom">
+          -100: ${escapeAttr(yData.axis_a_label || "")}
+        </div>
+        ${dots}
+      </div>
+      <div class="plot-legend">${legend}</div>
+    </div>
+  `;
+}
+
 async function openDetail(entityId, topicId, mode, scope) {
   try {
     overlayEl.classList.remove("hidden");
@@ -416,6 +518,30 @@ async function loadPositions() {
   const entity = entitySelect.value;
   try {
     modeBadgeEl.textContent = `mode: ${mode}`;
+    if (viewModeSelectEl && viewModeSelectEl.value === "axis2") {
+      const topicX = topicSelectXEl?.value;
+      const topicY = topicSelectYEl?.value;
+      if (!topicX || !topicY) {
+        positionsEl.innerHTML = `<p class="muted">2軸のトピックを選択してください。</p>`;
+        return;
+      }
+      const [xData, yData] = await Promise.all([
+        getPositionsForScope(topicX, mode, entity, "official", 1),
+        getPositionsForScope(topicY, mode, entity, "official", 1),
+      ]);
+      topicIdEl.textContent = `${topicX} × ${topicY}`;
+      topicNameEl.textContent = "2軸比較";
+      topicDescEl.textContent = `${xData.topic.name} と ${yData.topic.name} を比較表示します。`;
+      positionsEl.innerHTML = renderAxisComparison(xData, yData);
+      updateRubricLink(null);
+      positionsEl.querySelectorAll("button.axis-plot__dot").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          openAxisDetail(btn.dataset.entity, xData, yData);
+        });
+      });
+      return;
+    }
+
     const officialData = await getPositionsForScope(selectedTopicId, mode, entity, "official", 1);
     let mixedData = null;
     try {
@@ -426,7 +552,11 @@ async function loadPositions() {
     const blocks = [];
     blocks.push(renderPositionsBlock(officialData, "公式のみ", "official"));
     if (mixedData && mixedData.scores && mixedData.scores.length) {
-      blocks.push(renderPositionsBlock(mixedData, "公式＋外部（mixed）", "mixed"));
+      const officialAt = officialData.run_created_at ? new Date(officialData.run_created_at).getTime() : 0;
+      const mixedAt = mixedData.run_created_at ? new Date(mixedData.run_created_at).getTime() : 0;
+      if (!officialAt || !mixedAt || mixedAt >= officialAt) {
+        blocks.push(renderPositionsBlock(mixedData, "公式＋外部（mixed）", "mixed"));
+      }
     }
     positionsEl.innerHTML = blocks.join("");
     updateRubricLink(officialData);
@@ -440,8 +570,68 @@ async function loadPositions() {
   }
 }
 
+function openAxisDetail(entityId, xData, yData) {
+  const xScore = (xData.scores || []).find((s) => s.entity_id === entityId);
+  const yScore = (yData.scores || []).find((s) => s.entity_id === entityId);
+  if (!xScore || !yScore) return;
+  const xUrl = primaryEvidenceUrl(xScore);
+  const yUrl = primaryEvidenceUrl(yScore);
+  const xQuote = xScore?.evidence?.[0]?.quote || "";
+  const yQuote = yScore?.evidence?.[0]?.quote || "";
+  detailContentEl.innerHTML = `
+    <p class="eyebrow">2軸比較</p>
+    <h3>${xScore.entity_name || entityId}</h3>
+    <div class="rubric-item" style="margin: 10px 0;">
+      <div class="rubric-meta">${escapeAttr(xData.topic.name)}（X）</div>
+      <div style="margin-top:6px;">
+        <span class="${stanceColorClass(xScore.stance_label)}">${xScore.stance_label}</span>
+        <span class="chip confidence">conf: ${xScore.confidence}</span>
+        <span class="chip">score: ${xScore.stance_score}</span>
+      </div>
+      ${xScore.rationale ? `<div class="rubric-meta" style="margin-top:6px;">${escapeAttr(xScore.rationale)}</div>` : ""}
+      ${xQuote ? `<div class="rubric-meta" style="margin-top:6px;"><code>${escapeAttr(xQuote)}</code></div>` : ""}
+      ${xUrl ? `<div class="rubric-meta"><a class="link" target="_blank" rel="noreferrer" href="${escapeAttr(xUrl)}">${escapeAttr(xUrl)}</a></div>` : ""}
+    </div>
+    <div class="rubric-item" style="margin: 10px 0;">
+      <div class="rubric-meta">${escapeAttr(yData.topic.name)}（Y）</div>
+      <div style="margin-top:6px;">
+        <span class="${stanceColorClass(yScore.stance_label)}">${yScore.stance_label}</span>
+        <span class="chip confidence">conf: ${yScore.confidence}</span>
+        <span class="chip">score: ${yScore.stance_score}</span>
+      </div>
+      ${yScore.rationale ? `<div class="rubric-meta" style="margin-top:6px;">${escapeAttr(yScore.rationale)}</div>` : ""}
+      ${yQuote ? `<div class="rubric-meta" style="margin-top:6px;"><code>${escapeAttr(yQuote)}</code></div>` : ""}
+      ${yUrl ? `<div class="rubric-meta"><a class="link" target="_blank" rel="noreferrer" href="${escapeAttr(yUrl)}">${escapeAttr(yUrl)}</a></div>` : ""}
+    </div>
+  `;
+  overlayEl.classList.remove("hidden");
+}
+
 modeSelect.addEventListener("change", loadPositions);
 entitySelect.addEventListener("change", loadPositions);
+if (themeSelectEl) {
+  themeSelectEl.addEventListener("change", () => {
+    applyTheme(themeSelectEl.value);
+  });
+}
+if (viewModeSelectEl) {
+  viewModeSelectEl.addEventListener("change", () => {
+    const isAxis = viewModeSelectEl.value === "axis2";
+    if (axisTopicSelectorsEl) axisTopicSelectorsEl.classList.toggle("hidden", !isAxis);
+    if (topicSelectEl) topicSelectEl.classList.toggle("hidden", isAxis);
+    updateSelectedTopicMeta(selectedTopicId);
+    loadPositions();
+  });
+}
+if (topicSelectEl) {
+  topicSelectEl.addEventListener("change", () => {
+    selectedTopicId = topicSelectEl.value;
+    updateSelectedTopicMeta(selectedTopicId);
+    loadPositions();
+  });
+}
+if (topicSelectXEl) topicSelectXEl.addEventListener("change", loadPositions);
+if (topicSelectYEl) topicSelectYEl.addEventListener("change", loadPositions);
 overlayCloseBtn.addEventListener("click", () => overlayEl.classList.add("hidden"));
 overlayEl.addEventListener("click", (e) => {
   if (e.target === overlayEl) overlayEl.classList.add("hidden");
@@ -451,6 +641,8 @@ overlayEl.addEventListener("click", (e) => {
   try {
     await tryLoadSnapshot();
     applyUiForDataSource();
+    const savedTheme = localStorage.getItem("partyviz_public_theme");
+    applyTheme(savedTheme || "midnight");
   } catch (e) {
     positionsEl.innerHTML = `<p class="muted">スナップショット読み込みに失敗しました: ${e.message}</p>`;
   }

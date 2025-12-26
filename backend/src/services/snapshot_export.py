@@ -166,6 +166,10 @@ def build_topic_positions(
         rubric_version=rubric_version,
         axis_a_label=axis_left,
         axis_b_label=axis_right,
+        run_id=run.run_id,
+        run_created_at=run.created_at,
+        run_scope=(run.meta or {}).get("scope") if isinstance(run.meta, dict) else None,
+        run_meta=(run.meta or None),
         scores=items,
     )
 

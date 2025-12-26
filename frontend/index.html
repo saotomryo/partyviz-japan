@@ -28,6 +28,21 @@
             <option value="party+politician" disabled>政党＋政治家 - 未実装</option>
           </select>
         </label>
+        <label>
+          表示
+          <select id="viewModeSelect">
+            <option value="single">1軸</option>
+            <option value="axis2">2軸</option>
+          </select>
+        </label>
+        <label>
+          テーマ
+          <select id="themeSelect">
+            <option value="midnight">深夜</option>
+            <option value="dawn">朝</option>
+            <option value="sunny">昼</option>
+          </select>
+        </label>
         <div style="align-self:flex-end;">
           <a class="button-link" href="admin.html" id="adminLink">管理UI</a>
         </div>
@@ -40,7 +55,16 @@
       <div class="panel__header">
         <h2>トピック</h2>
       </div>
-      <ul id="topicList" class="topic-list"></ul>
+      <div class="topic-select">
+        <label class="small">単軸</label>
+        <select id="topicSelect" size="12"></select>
+      </div>
+      <div class="topic-select hidden" id="axisTopicSelectors">
+        <label class="small">2軸 X</label>
+        <select id="topicSelectX" size="6"></select>
+        <label class="small" style="margin-top:8px;">2軸 Y</label>
+        <select id="topicSelectY" size="6"></select>
+      </div>
     </aside>
 
     <section class="content">

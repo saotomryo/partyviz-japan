@@ -224,6 +224,10 @@ class TopicPositionsResponse(BaseModel):
     rubric_version: Optional[int] = None
     axis_a_label: Optional[str] = None
     axis_b_label: Optional[str] = None
+    run_id: Optional[uuid.UUID] = None
+    run_created_at: Optional[datetime] = None
+    run_scope: Optional[str] = None
+    run_meta: Optional[dict] = None
     scores: List[ScoreItem]
 
 

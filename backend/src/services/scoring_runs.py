@@ -533,6 +533,7 @@ def run_topic_scoring(
             "topic_text": topic_text,
             "retrieval_mode": "index" if index_only else "search",
             "index_only": index_only,
+            "include_external": allow_external,
             "max_parties": max_parties,
             "max_evidence_per_party": max_evidence_per_party,
             "created_at": _now_iso(),
