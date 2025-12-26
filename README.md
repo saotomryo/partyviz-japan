@@ -124,6 +124,11 @@ python -m http.server 5173
 5. 「スコアリング実行」を押す（根拠URL抽出→取得→相対スコア算出→DB保存）
 6. 「最新スコア表示」で最新結果を確認
 
+**G. スナップショット出力（静的公開用）**
+1. 管理UIの「スナップショットをダウンロード」を押す
+2. 出力された `snapshot.json` を `frontend/data/snapshot.json` に配置
+3. 公開UIは `http://localhost:5173/?source=snapshot` で確認可能
+
 ### 2) メインUI（`/`）
 ![メインUI](JPG/mainUI.jpg) 
 ![メインUI](JPG/mainUI2.jpg)
