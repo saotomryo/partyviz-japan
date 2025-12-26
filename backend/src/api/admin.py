@@ -2,9 +2,11 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..db import models
 from ..schemas import (
     AdminJobResponse,
     AdminPurgeRequest,
@@ -14,6 +16,8 @@ from ..schemas import (
     PartyRegistryDiscoverRequest,
     PartyRegistryDiscoverResponse,
     PartyResponse,
+    PolicySourceList,
+    PolicySourceUpdate,
     TopicCreate,
     TopicCreateRequest,
     TopicRubricCreate,
@@ -28,6 +32,8 @@ from ..schemas import (
 from ..services import admin_purge as admin_purge_service
 from ..services import party_registry
 from ..services import party_registry_auto
+from ..services import policy_sources
+from ..services import policy_crawler
 from ..services import scoring_runs
 from ..services import snapshot_export
 from ..settings import settings
@@ -105,6 +111,44 @@ def patch_party(party_id: str, payload: PartyUpdate, db: Session = Depends(get_d
         return party_registry.update_party(db, party_id, payload)
     except ValueError:
         raise HTTPException(status_code=404, detail="party not found")
+
+
+@router.get("/parties/{party_id}/policy-sources", response_model=PolicySourceList, dependencies=[Depends(require_api_key)])
+def get_policy_sources(party_id: str, db: Session = Depends(get_db)) -> PolicySourceList:
+    party = db.get(models.PartyRegistry, party_id)
+    if not party:
+        raise HTTPException(status_code=404, detail="party not found")
+    sources = policy_sources.list_sources(db, party_id)
+    return PolicySourceList(
+        party_id=party.party_id,
+        sources=[{"base_url": s.base_url, "status": s.status} for s in sources],
+    )
+
+
+@router.put("/parties/{party_id}/policy-sources", response_model=PolicySourceList, dependencies=[Depends(require_api_key)])
+def put_policy_sources(party_id: str, payload: PolicySourceUpdate, db: Session = Depends(get_db)) -> PolicySourceList:
+    try:
+        sources = policy_sources.replace_sources(db, party_id, payload.base_urls)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="party not found")
+    return PolicySourceList(
+        party_id=party_id,
+        sources=[{"base_url": s.base_url, "status": s.status} for s in sources],
+    )
+
+
+@router.post("/parties/{party_id}/policy-sources/crawl", dependencies=[Depends(require_api_key)])
+def crawl_policy_sources(party_id: str, max_urls: int = 200, max_depth: int = 2, db: Session = Depends(get_db)) -> dict:
+    try:
+        stats = policy_crawler.crawl_party_policy_sources(
+            db,
+            party_id=party_id,
+            max_urls=max(1, min(int(max_urls), 500)),
+            max_depth=max(0, min(int(max_depth), 4)),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"party_id": party_id, "stats": stats.__dict__}
 
 
 @router.post("/parties/discover", response_model=PartyRegistryDiscoverResponse, dependencies=[Depends(require_api_key)])
@@ -278,6 +322,7 @@ def admin_run_topic_scoring(topic_id: str, req: TopicScoreRunRequest, db: Sessio
             db,
             topic_id=topic_id,
             topic_text=topic_text,
+            scope="official",
             search_provider=req.search_provider,
             search_openai_model=req.search_openai_model,
             search_gemini_model=req.search_gemini_model,
@@ -286,12 +331,34 @@ def admin_run_topic_scoring(topic_id: str, req: TopicScoreRunRequest, db: Sessio
             score_gemini_model=req.score_gemini_model,
             max_parties=req.max_parties,
             max_evidence_per_party=req.max_evidence_per_party,
+            index_only=req.index_only,
             debug=settings.agent_debug,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    _, scores = scoring_runs.list_latest_topic_scores(db, topic_id=topic_id)
+    if not req.index_only and req.include_external:
+        try:
+            scoring_runs.run_topic_scoring(
+                db,
+                topic_id=topic_id,
+                topic_text=topic_text,
+                scope="mixed",
+                search_provider=req.search_provider,
+                search_openai_model=req.search_openai_model,
+                search_gemini_model=req.search_gemini_model,
+                score_provider=req.score_provider,
+                score_openai_model=req.score_openai_model,
+                score_gemini_model=req.score_gemini_model,
+                max_parties=req.max_parties,
+                max_evidence_per_party=req.max_evidence_per_party,
+                index_only=req.index_only,
+                debug=settings.agent_debug,
+            )
+        except ValueError:
+            pass
+
+    scores = list(db.scalars(select(models.TopicScore).where(models.TopicScore.run_id == run.run_id)))
     party_map = {p.party_id: p for p in party_registry.list_parties(db)}
     return TopicScoreRunResponse(
         run_id=run.run_id,

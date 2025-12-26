@@ -7,7 +7,16 @@ from sqlalchemy import select
 
 from ..db import get_db
 from ..db import models
-from ..schemas import Evidence, ScoreItem, ScoreMeta, Topic, TopicDetailResponse, TopicPositionsResponse, TopicsResponse
+from ..schemas import (
+    Evidence,
+    ScoreItem,
+    ScoreMeta,
+    Topic,
+    TopicDetailResponse,
+    TopicPositionsResponse,
+    TopicRubricResponse,
+    TopicsResponse,
+)
 from ..services import public_data
 
 
@@ -73,6 +82,8 @@ def get_topic_positions(
     topic_id: str,
     mode: str = Query("claim", pattern="^(claim|action|combined)$"),
     entity: str = Query("party", pattern="^(party|party\\+politician)$"),
+    scope: str = Query("official", pattern="^(official|mixed)$"),
+    fallback: int = Query(1, ge=0, le=1, description="mixedが無い場合にofficialへフォールバックする(1)か"),
     db: Session = Depends(get_db),
 ) -> TopicPositionsResponse:
     if mode != "claim":
@@ -85,7 +96,10 @@ def get_topic_positions(
         raise HTTPException(status_code=404, detail="topic not found")
     topic = Topic(topic_id=topic_row.topic_id, name=topic_row.name, description=topic_row.description)
 
-    run = public_data.get_latest_score_run(db, topic_id)
+    scope_norm = (scope or "official").strip().lower()
+    run = public_data.get_latest_score_run(db, topic_id, scope=scope_norm)
+    if (not run) and scope_norm == "mixed" and int(fallback) == 1:
+        run = public_data.get_latest_score_run(db, topic_id, scope="official")
     if not run:
         return TopicPositionsResponse(topic=topic, mode=mode, entity=entity, scores=[])
     scores = public_data.list_scores_for_run(db, run.run_id)
@@ -172,8 +186,20 @@ def get_topic_positions(
         rubric_version=(rubric.version if rubric else None),
         axis_a_label=axis_left,
         axis_b_label=axis_right,
+        run_id=run.run_id,
+        run_created_at=run.created_at,
+        run_scope=(run.meta or {}).get("scope") if isinstance(run.meta, dict) else None,
+        run_meta=(run.meta or None),
         scores=items,
     )
+
+
+@router.get("/topics/{topic_id}/rubric", response_model=TopicRubricResponse)
+def get_topic_rubric(topic_id: str, db: Session = Depends(get_db)) -> TopicRubricResponse:
+    rubric = public_data.get_active_rubric(db, topic_id)
+    if not rubric:
+        raise HTTPException(status_code=404, detail="rubric not found")
+    return TopicRubricResponse.model_validate(rubric)
 
 
 @router.get("/entities/{entity_id}/topics/{topic_id}/detail", response_model=TopicDetailResponse)
@@ -181,6 +207,8 @@ def get_topic_detail(
     entity_id: str,
     topic_id: str,
     mode: str = Query("claim", pattern="^(claim|action|combined)$"),
+    scope: str = Query("official", pattern="^(official|mixed)$"),
+    fallback: int = Query(1, ge=0, le=1, description="mixedが無い場合にofficialへフォールバックする(1)か"),
     db: Session = Depends(get_db),
 ) -> TopicDetailResponse:
     if mode != "claim":
@@ -191,7 +219,10 @@ def get_topic_detail(
         raise HTTPException(status_code=404, detail="topic not found")
     topic = Topic(topic_id=topic_row.topic_id, name=topic_row.name, description=topic_row.description)
 
-    run = public_data.get_latest_score_run(db, topic_id)
+    scope_norm = (scope or "official").strip().lower()
+    run = public_data.get_latest_score_run(db, topic_id, scope=scope_norm)
+    if (not run) and scope_norm == "mixed" and int(fallback) == 1:
+        run = public_data.get_latest_score_run(db, topic_id, scope="official")
     if not run:
         raise HTTPException(status_code=404, detail="score not found")
     scores = public_data.list_scores_for_run(db, run.run_id)

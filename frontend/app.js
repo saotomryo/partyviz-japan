@@ -2,13 +2,20 @@ const DEFAULT_API_BASE = "http://localhost:8000";
 const DEFAULT_SNAPSHOT_URL = "./data/snapshot.json";
 
 const topicListEl = document.getElementById("topicList");
+const topicSelectEl = document.getElementById("topicSelect");
+const topicSelectXEl = document.getElementById("topicSelectX");
+const topicSelectYEl = document.getElementById("topicSelectY");
+const axisTopicSelectorsEl = document.getElementById("axisTopicSelectors");
 const positionsEl = document.getElementById("positions");
 const modeSelect = document.getElementById("modeSelect");
 const entitySelect = document.getElementById("entitySelect");
+const viewModeSelectEl = document.getElementById("viewModeSelect");
+const themeSelectEl = document.getElementById("themeSelect");
 const topicIdEl = document.getElementById("selectedTopicId");
 const topicNameEl = document.getElementById("selectedTopicName");
 const topicDescEl = document.getElementById("selectedTopicDescription");
 const modeBadgeEl = document.getElementById("modeBadge");
+const rubricLinkEl = document.getElementById("rubricLink");
 const overlayEl = document.getElementById("detailOverlay");
 const overlayCloseBtn = document.getElementById("overlayClose");
 const detailContentEl = document.getElementById("detailContent");
@@ -17,6 +24,9 @@ const adminLinkEl = document.getElementById("adminLink");
 let selectedTopicId = null;
 let snapshotData = null;
 let dataSource = "api";
+let snapshotUrlUsed = DEFAULT_SNAPSHOT_URL;
+let topicsCache = [];
+let themeName = "midnight";
 
 function getQueryParam(key) {
   const url = new URL(window.location.href);
@@ -35,6 +45,7 @@ async function tryLoadSnapshot() {
     getQueryParam("snapshot") ||
     (localStorage.getItem("partyviz_public_snapshot_url") || "").trim() ||
     DEFAULT_SNAPSHOT_URL;
+  snapshotUrlUsed = snapshotUrl;
 
   try {
     const res = await fetch(snapshotUrl, { cache: "no-cache" });
@@ -58,6 +69,19 @@ function applyUiForDataSource() {
   if (dataSource === "snapshot" && adminLinkEl) {
     adminLinkEl.remove();
   }
+  if (rubricLinkEl) {
+    rubricLinkEl.classList.add("hidden");
+  }
+}
+
+function applyTheme(theme) {
+  const themeValue = (theme || "midnight").toLowerCase();
+  document.body.classList.remove("theme-dawn", "theme-sunny");
+  if (themeValue === "dawn") document.body.classList.add("theme-dawn");
+  if (themeValue === "sunny") document.body.classList.add("theme-sunny");
+  themeName = themeValue;
+  if (themeSelectEl) themeSelectEl.value = themeValue;
+  localStorage.setItem("partyviz_public_theme", themeValue);
 }
 
 async function fetchJSON(url) {
@@ -76,18 +100,23 @@ async function getTopics() {
   return fetchJSON(`${getApiBase()}/topics`);
 }
 
-async function getPositions(topicId, mode, entity) {
+async function getPositionsForScope(topicId, mode, entity, scope, fallback = 1) {
   if (dataSource === "snapshot") {
-    const p = snapshotData.positions?.[topicId];
+    const mixed = scope === "mixed" ? snapshotData.positions_mixed?.[topicId] : null;
+    const p = mixed || (fallback ? snapshotData.positions?.[topicId] : null);
     if (!p) throw new Error("snapshot: positions not found for topic");
     return p;
   }
-  return fetchJSON(`${getApiBase()}/topics/${topicId}/positions?mode=${mode}&entity=${encodeURIComponent(entity)}`);
+  return fetchJSON(
+    `${getApiBase()}/topics/${topicId}/positions?mode=${mode}&entity=${encodeURIComponent(entity)}&scope=${encodeURIComponent(scope)}&fallback=${fallback}`
+  );
 }
 
-async function getDetail(entityId, topicId, mode) {
+async function getDetail(entityId, topicId, mode, scope) {
   if (dataSource === "snapshot") {
-    const p = snapshotData.positions?.[topicId];
+    const p =
+      (scope === "mixed" ? snapshotData.positions_mixed?.[topicId] : null) ||
+      snapshotData.positions?.[topicId];
     const s = p?.scores?.find((x) => x.entity_id === entityId);
     if (!p || !s) throw new Error("snapshot: score not found");
     return {
@@ -100,7 +129,9 @@ async function getDetail(entityId, topicId, mode) {
       score: s,
     };
   }
-  return fetchJSON(`${getApiBase()}/entities/${entityId}/topics/${topicId}/detail?mode=${mode}`);
+  return fetchJSON(
+    `${getApiBase()}/entities/${entityId}/topics/${topicId}/detail?mode=${mode}&scope=${encodeURIComponent(scope)}&fallback=1`
+  );
 }
 
 function stanceColorClass(label) {
@@ -153,42 +184,75 @@ function escapeAttr(str) {
 }
 
 function renderTopics(topics) {
-  topicListEl.innerHTML = "";
-  topics.forEach((t, idx) => {
-    const li = document.createElement("li");
-    li.className = "topic-item";
-    li.innerHTML = `
-      <p class="eyebrow">${t.topic_id}</p>
-      <p class="title">${t.name}</p>
-      <p class="muted">${t.description || ""}</p>
-    `;
-    li.addEventListener("click", () => {
-      selectedTopicId = t.topic_id;
-      document.querySelectorAll(".topic-item").forEach(el => el.classList.remove("active"));
-      li.classList.add("active");
-      topicIdEl.textContent = t.topic_id;
-      topicNameEl.textContent = t.name;
-      topicDescEl.textContent = t.description || "";
-      loadPositions();
+  topicsCache = topics || [];
+  if (topicListEl) topicListEl.innerHTML = "";
+  const fillSelect = (el, items) => {
+    if (!el) return;
+    el.innerHTML = "";
+    items.forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t.topic_id;
+      opt.textContent = `${t.name}`;
+      el.appendChild(opt);
     });
-    topicListEl.appendChild(li);
-    if (idx === 0) {
-      li.click();
-    }
-  });
+  };
+  fillSelect(topicSelectEl, topicsCache);
+  fillSelect(topicSelectXEl, topicsCache);
+  fillSelect(topicSelectYEl, topicsCache);
+  if (topicsCache.length) {
+    selectedTopicId = topicsCache[0].topic_id;
+    if (topicSelectEl) topicSelectEl.value = selectedTopicId;
+    if (topicSelectXEl) topicSelectXEl.value = topicsCache[0].topic_id;
+    if (topicSelectYEl) topicSelectYEl.value = topicsCache[1]?.topic_id || topicsCache[0].topic_id;
+    updateSelectedTopicMeta(selectedTopicId);
+    loadPositions();
+  }
 }
 
-function renderPositions(data) {
-  const { topic, mode, entity, scores, axis_a_label, axis_b_label } = data;
-  modeBadgeEl.textContent = `mode: ${mode}`;
-  if (!scores || scores.length === 0) {
-    positionsEl.innerHTML = `<p class="muted">データがありません。</p>`;
+function updateSelectedTopicMeta(topicId) {
+  const topic = topicsCache.find((t) => t.topic_id === topicId);
+  topicIdEl.textContent = topic?.topic_id || "topic";
+  topicNameEl.textContent = topic?.name || "トピックを選択してください";
+  topicDescEl.textContent = topic?.description || "";
+}
+
+function buildRubricLink(topicId) {
+  if (!topicId) return null;
+  const params = new URLSearchParams({ topic: topicId });
+  if (dataSource === "snapshot") {
+    params.set("source", "snapshot");
+    if (snapshotUrlUsed) params.set("snapshot", snapshotUrlUsed);
+  }
+  return `rubric.html?${params.toString()}`;
+}
+
+function updateRubricLink(positions) {
+  if (!rubricLinkEl) return;
+  const topicId = positions?.topic?.topic_id || selectedTopicId;
+  const version = positions?.rubric_version ?? null;
+  const url = buildRubricLink(topicId);
+  if (!url || version === null) {
+    rubricLinkEl.classList.add("hidden");
     return;
+  }
+  rubricLinkEl.classList.remove("hidden");
+  rubricLinkEl.href = url;
+  rubricLinkEl.textContent = `評価基準を見る（v${version}）`;
+}
+
+function renderPositionsBlock(data, scopeLabel, scopeValue) {
+  const { topic, mode, scores, axis_a_label, axis_b_label } = data;
+  if (!scores || scores.length === 0) {
+    return `
+      <div class="rubric-item">
+        <header><h3>${scopeLabel}</h3></header>
+        <p class="muted">データがありません。</p>
+      </div>
+    `;
   }
 
   const leftLabel = axis_a_label || "Axis (-100)";
   const rightLabel = axis_b_label || "Axis (+100)";
-
   const colorMap = buildPartyColorMap(scores);
 
   const bucketKey = (score) => String(Math.round(Number(score || 0)));
@@ -217,7 +281,7 @@ function renderPositions(data) {
       const offset = (idx - (group.length - 1) / 2) * step;
       const color = colorMap.get(s.entity_id) || "#7ad5ff";
 
-      return `<button class="plot-axis__dot" style="left:${percent}%; top:calc(50% + ${offset}px); background:${color};" title="${escapeAttr(fullTitle)}" data-name="${escapeAttr(title)}" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}"></button>`;
+      return `<button class="plot-axis__dot" style="left:${percent}%; top:calc(50% + ${offset}px); background:${color};" title="${escapeAttr(fullTitle)}" data-name="${escapeAttr(title)}" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}" data-scope="${scopeValue}"></button>`;
     })
     .join("");
 
@@ -253,7 +317,7 @@ function renderPositions(data) {
           <div class="plot-row__track">
             <div class="plot-track">
               <div class="plot-track__zero"></div>
-              <button class="plot-dot" style="left:${percent}%; background:${color};" title="${escapeAttr(title)} (${s.stance_score})" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}"></button>
+              <button class="plot-dot" style="left:${percent}%; background:${color};" title="${escapeAttr(title)} (${s.stance_score})" data-entity="${s.entity_id}" data-topic="${topic.topic_id}" data-mode="${mode}" data-scope="${scopeValue}"></button>
             </div>
           </div>
           <div class="plot-row__score">${s.stance_score}</div>
@@ -262,11 +326,16 @@ function renderPositions(data) {
     })
     .join("");
 
-  positionsEl.innerHTML = `
-    <div class="plot">
+  return `
+    <div class="plot" style="margin-bottom: 18px;">
       <div class="plot__header">
-        <div class="plot__axis-label plot__axis-label--left">-100: ${leftLabel}</div>
-        <div class="plot__axis-label plot__axis-label--right">+100: ${rightLabel}</div>
+        <div>
+          <div class="rubric-meta">${scopeLabel}</div>
+          <div class="plot__axis-head">
+            <div class="plot__axis-label plot__axis-label--left">-100: ${leftLabel}</div>
+            <div class="plot__axis-label plot__axis-label--right">+100: ${rightLabel}</div>
+          </div>
+        </div>
       </div>
       <div class="plot-legend">${legend}</div>
       <div class="plot__axis">
@@ -284,15 +353,10 @@ function renderPositions(data) {
       </div>
     </div>
   `;
-
-  positionsEl.querySelectorAll("button.plot-dot, button.plot-axis__dot").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      openDetail(btn.dataset.entity, btn.dataset.topic, btn.dataset.mode);
-    });
-  });
 }
 
 function renderDetail(data) {
+  const alt = data._alt || null;
   const s = data.score;
   const evidence = s.evidence
     .map(
@@ -305,6 +369,18 @@ function renderDetail(data) {
       </li>`
     )
     .join("");
+
+  const altSummary =
+    alt && alt.score
+      ? `<div class="rubric-item" style="margin: 10px 0;">
+          <div class="rubric-meta">公式のみ（比較）</div>
+          <div style="margin-top:6px;">
+            <span class="${stanceColorClass(alt.score.stance_label)}">${alt.score.stance_label}</span>
+            <span class="chip confidence">conf: ${alt.score.confidence}</span>
+            <span class="chip">score: ${alt.score.stance_score}</span>
+          </div>
+        </div>`
+      : "";
 
   const axisInfo =
     data.axis_a_label && data.axis_b_label
@@ -322,6 +398,7 @@ function renderDetail(data) {
       <span class="chip confidence">conf: ${s.confidence}</span>
       <span class="chip">score: ${s.stance_score}</span>
     </div>
+    ${altSummary}
     <p>${s.rationale}</p>
     <h4>根拠</h4>
     <ul class="evidence-list">${evidence}</ul>
@@ -329,11 +406,97 @@ function renderDetail(data) {
   `;
 }
 
-async function openDetail(entityId, topicId, mode) {
+function renderAxisComparison(xData, yData) {
+  const xTopic = xData.topic;
+  const yTopic = yData.topic;
+  const xMap = new Map(xData.scores.map((s) => [s.entity_id, s]));
+  const yMap = new Map(yData.scores.map((s) => [s.entity_id, s]));
+  const scores = [];
+  xMap.forEach((xScore, id) => {
+    const yScore = yMap.get(id);
+    if (!yScore) return;
+    scores.push({ id, x: xScore, y: yScore });
+  });
+  const colorMap = buildPartyColorMap(xData.scores);
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const jitterByKey = new Map();
+  const dots = scores
+    .map((item) => {
+      const percentX = scoreToPercent(item.x.stance_score);
+      const percentY = scoreToPercent(item.y.stance_score);
+      const key = `${Math.round(percentX)}:${Math.round(percentY)}`;
+      const bucket = jitterByKey.get(key) || [];
+      bucket.push(item.id);
+      jitterByKey.set(key, bucket);
+      const idx = bucket.length - 1;
+      const angle = (idx * 137.5) * (Math.PI / 180);
+      const radius = 10 + Math.floor(idx / 6) * 6;
+      const dx = Math.cos(angle) * radius;
+      const dy = Math.sin(angle) * radius;
+      const clampedX = clamp(percentX, 3, 97);
+      const clampedY = clamp(percentY, 3, 97);
+      const color = colorMap.get(item.id) || "#7ad5ff";
+      const name = item.x.entity_name || item.id;
+      const title = `${name} (${item.x.stance_score}, ${item.y.stance_score})`;
+      return `<button class="axis-plot__dot" style="left:${clampedX}%; bottom:${clampedY}%; background:${color}; --dx:${dx.toFixed(1)}px; --dy:${dy.toFixed(1)}px;" title="${escapeAttr(title)}" data-name="${escapeAttr(name)}" data-entity="${item.id}"></button>`;
+    })
+    .join("");
+
+  const legend = scores
+    .slice()
+    .sort((a, b) => (a.x.entity_name || a.id).localeCompare(b.x.entity_name || b.id, "ja"))
+    .map((item) => {
+      const name = item.x.entity_name || item.id;
+      const color = colorMap.get(item.id) || "#7ad5ff";
+      return `<span class="plot-legend__item"><span class="plot-legend__swatch" style="background:${color};"></span>${escapeAttr(name)}</span>`;
+    })
+    .join("");
+
+  return `
+    <div class="axis-plot">
+      <div class="rubric-meta">2軸比較</div>
+      <div class="axis-plot__grid">
+        <div class="axis-plot__zero-x"></div>
+        <div class="axis-plot__zero-y"></div>
+        <div class="axis-plot__axis-label axis-plot__axis-label--x">
+          ${escapeAttr(xTopic.name)}（X）
+        </div>
+        <div class="axis-plot__axis-label axis-plot__axis-label--y">
+          ${escapeAttr(yTopic.name)}（Y）
+        </div>
+        <div class="axis-plot__axis-end axis-plot__axis-end--x-left">
+          -100: ${escapeAttr(xData.axis_a_label || "")}
+        </div>
+        <div class="axis-plot__axis-end axis-plot__axis-end--x-right">
+          +100: ${escapeAttr(xData.axis_b_label || "")}
+        </div>
+        <div class="axis-plot__axis-end axis-plot__axis-end--y-top">
+          +100: ${escapeAttr(yData.axis_b_label || "")}
+        </div>
+        <div class="axis-plot__axis-end axis-plot__axis-end--y-bottom">
+          -100: ${escapeAttr(yData.axis_a_label || "")}
+        </div>
+        ${dots}
+      </div>
+      <div class="plot-legend">${legend}</div>
+    </div>
+  `;
+}
+
+async function openDetail(entityId, topicId, mode, scope) {
   try {
     overlayEl.classList.remove("hidden");
     detailContentEl.innerHTML = `<p class="muted">読み込み中...</p>`;
-    const data = await getDetail(entityId, topicId, mode);
+    const scopeNorm = (scope || "official").toLowerCase();
+    const data = await getDetail(entityId, topicId, mode, scopeNorm);
+    if (scopeNorm === "mixed") {
+      try {
+        const official = await getDetail(entityId, topicId, mode, "official");
+        data._alt = official;
+      } catch {
+        // ignore
+      }
+    }
     renderDetail(data);
   } catch (err) {
     detailContentEl.innerHTML = `<p class="muted">取得に失敗しました: ${err.message}</p>`;
@@ -354,15 +517,121 @@ async function loadPositions() {
   const mode = modeSelect.value;
   const entity = entitySelect.value;
   try {
-    const data = await getPositions(selectedTopicId, mode, entity);
-    renderPositions(data);
+    modeBadgeEl.textContent = `mode: ${mode}`;
+    if (viewModeSelectEl && viewModeSelectEl.value === "axis2") {
+      const topicX = topicSelectXEl?.value;
+      const topicY = topicSelectYEl?.value;
+      if (!topicX || !topicY) {
+        positionsEl.innerHTML = `<p class="muted">2軸のトピックを選択してください。</p>`;
+        return;
+      }
+      const [xData, yData] = await Promise.all([
+        getPositionsForScope(topicX, mode, entity, "official", 1),
+        getPositionsForScope(topicY, mode, entity, "official", 1),
+      ]);
+      topicIdEl.textContent = `${topicX} × ${topicY}`;
+      topicNameEl.textContent = "2軸比較";
+      topicDescEl.textContent = `${xData.topic.name} と ${yData.topic.name} を比較表示します。`;
+      positionsEl.innerHTML = renderAxisComparison(xData, yData);
+      updateRubricLink(null);
+      positionsEl.querySelectorAll("button.axis-plot__dot").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          openAxisDetail(btn.dataset.entity, xData, yData);
+        });
+      });
+      return;
+    }
+
+    const officialData = await getPositionsForScope(selectedTopicId, mode, entity, "official", 1);
+    let mixedData = null;
+    try {
+      mixedData = await getPositionsForScope(selectedTopicId, mode, entity, "mixed", 0);
+    } catch {
+      mixedData = null;
+    }
+    const blocks = [];
+    blocks.push(renderPositionsBlock(officialData, "公式のみ", "official"));
+    if (mixedData && mixedData.scores && mixedData.scores.length) {
+      const officialAt = officialData.run_created_at ? new Date(officialData.run_created_at).getTime() : 0;
+      const mixedAt = mixedData.run_created_at ? new Date(mixedData.run_created_at).getTime() : 0;
+      if (!officialAt || !mixedAt || mixedAt >= officialAt) {
+        blocks.push(renderPositionsBlock(mixedData, "公式＋外部（mixed）", "mixed"));
+      }
+    }
+    positionsEl.innerHTML = blocks.join("");
+    updateRubricLink(officialData);
+    positionsEl.querySelectorAll("button.plot-dot, button.plot-axis__dot").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openDetail(btn.dataset.entity, btn.dataset.topic, btn.dataset.mode, btn.dataset.scope);
+      });
+    });
   } catch (err) {
     positionsEl.innerHTML = `<p class="muted">取得に失敗しました: ${err.message}</p>`;
   }
 }
 
+function openAxisDetail(entityId, xData, yData) {
+  const xScore = (xData.scores || []).find((s) => s.entity_id === entityId);
+  const yScore = (yData.scores || []).find((s) => s.entity_id === entityId);
+  if (!xScore || !yScore) return;
+  const xUrl = primaryEvidenceUrl(xScore);
+  const yUrl = primaryEvidenceUrl(yScore);
+  const xQuote = xScore?.evidence?.[0]?.quote || "";
+  const yQuote = yScore?.evidence?.[0]?.quote || "";
+  detailContentEl.innerHTML = `
+    <p class="eyebrow">2軸比較</p>
+    <h3>${xScore.entity_name || entityId}</h3>
+    <div class="rubric-item" style="margin: 10px 0;">
+      <div class="rubric-meta">${escapeAttr(xData.topic.name)}（X）</div>
+      <div style="margin-top:6px;">
+        <span class="${stanceColorClass(xScore.stance_label)}">${xScore.stance_label}</span>
+        <span class="chip confidence">conf: ${xScore.confidence}</span>
+        <span class="chip">score: ${xScore.stance_score}</span>
+      </div>
+      ${xScore.rationale ? `<div class="rubric-meta" style="margin-top:6px;">${escapeAttr(xScore.rationale)}</div>` : ""}
+      ${xQuote ? `<div class="rubric-meta" style="margin-top:6px;"><code>${escapeAttr(xQuote)}</code></div>` : ""}
+      ${xUrl ? `<div class="rubric-meta"><a class="link" target="_blank" rel="noreferrer" href="${escapeAttr(xUrl)}">${escapeAttr(xUrl)}</a></div>` : ""}
+    </div>
+    <div class="rubric-item" style="margin: 10px 0;">
+      <div class="rubric-meta">${escapeAttr(yData.topic.name)}（Y）</div>
+      <div style="margin-top:6px;">
+        <span class="${stanceColorClass(yScore.stance_label)}">${yScore.stance_label}</span>
+        <span class="chip confidence">conf: ${yScore.confidence}</span>
+        <span class="chip">score: ${yScore.stance_score}</span>
+      </div>
+      ${yScore.rationale ? `<div class="rubric-meta" style="margin-top:6px;">${escapeAttr(yScore.rationale)}</div>` : ""}
+      ${yQuote ? `<div class="rubric-meta" style="margin-top:6px;"><code>${escapeAttr(yQuote)}</code></div>` : ""}
+      ${yUrl ? `<div class="rubric-meta"><a class="link" target="_blank" rel="noreferrer" href="${escapeAttr(yUrl)}">${escapeAttr(yUrl)}</a></div>` : ""}
+    </div>
+  `;
+  overlayEl.classList.remove("hidden");
+}
+
 modeSelect.addEventListener("change", loadPositions);
 entitySelect.addEventListener("change", loadPositions);
+if (themeSelectEl) {
+  themeSelectEl.addEventListener("change", () => {
+    applyTheme(themeSelectEl.value);
+  });
+}
+if (viewModeSelectEl) {
+  viewModeSelectEl.addEventListener("change", () => {
+    const isAxis = viewModeSelectEl.value === "axis2";
+    if (axisTopicSelectorsEl) axisTopicSelectorsEl.classList.toggle("hidden", !isAxis);
+    if (topicSelectEl) topicSelectEl.classList.toggle("hidden", isAxis);
+    updateSelectedTopicMeta(selectedTopicId);
+    loadPositions();
+  });
+}
+if (topicSelectEl) {
+  topicSelectEl.addEventListener("change", () => {
+    selectedTopicId = topicSelectEl.value;
+    updateSelectedTopicMeta(selectedTopicId);
+    loadPositions();
+  });
+}
+if (topicSelectXEl) topicSelectXEl.addEventListener("change", loadPositions);
+if (topicSelectYEl) topicSelectYEl.addEventListener("change", loadPositions);
 overlayCloseBtn.addEventListener("click", () => overlayEl.classList.add("hidden"));
 overlayEl.addEventListener("click", (e) => {
   if (e.target === overlayEl) overlayEl.classList.add("hidden");
@@ -372,6 +641,8 @@ overlayEl.addEventListener("click", (e) => {
   try {
     await tryLoadSnapshot();
     applyUiForDataSource();
+    const savedTheme = localStorage.getItem("partyviz_public_theme");
+    applyTheme(savedTheme || "midnight");
   } catch (e) {
     positionsEl.innerHTML = `<p class="muted">スナップショット読み込みに失敗しました: ${e.message}</p>`;
   }

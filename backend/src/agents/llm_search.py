@@ -188,6 +188,7 @@ class OpenAILLMSearchClient:
         topic: str,
         parties: List[ResolvedParty],
         max_per_party: int = 3,
+        allowed_domains: list[str] | None = None,
     ) -> List[PolicyEvidence]:
         party_payload = [
             {"party_name": p.name_ja, "official_url": p.official_url, "domain": urlparse(p.official_url).netloc}
@@ -204,12 +205,14 @@ class OpenAILLMSearchClient:
                 ),
             },
         ]
-        allowed_domains: list[str] = []
-        for p in parties:
-            host = urlparse(p.official_url).netloc
-            if host:
-                allowed_domains.append(host)
-            allowed_domains.extend(list(p.allowed_domains or []))
+        effective_allowed_domains: list[str] | None = allowed_domains
+        if effective_allowed_domains is None:
+            effective_allowed_domains = []
+            for p in parties:
+                host = urlparse(p.official_url).netloc
+                if host:
+                    effective_allowed_domains.append(host)
+                effective_allowed_domains.extend(list(p.allowed_domains or []))
 
         try:
             self.last_error = None
@@ -218,7 +221,7 @@ class OpenAILLMSearchClient:
                 self._responses_web_search(
                     system=SYSTEM_PROMPT_EVIDENCE,
                     user=messages[1]["content"],
-                    allowed_domains=allowed_domains,
+                    allowed_domains=effective_allowed_domains,
                 )
                 or "[]"
             )
@@ -341,6 +344,7 @@ class GeminiLLMSearchClient:
         topic: str,
         parties: List[ResolvedParty],
         max_per_party: int = 3,
+        allowed_domains: list[str] | None = None,
     ) -> List[PolicyEvidence]:
         party_payload = [
             {"party_name": p.name_ja, "official_url": p.official_url, "domain": urlparse(p.official_url).netloc}

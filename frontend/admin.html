@@ -165,10 +165,18 @@
       <div class="divider"></div>
 
       <h3 style="margin:0 0 8px;">スコアリング（実行 & 保存）</h3>
-      <p class="small">選択中のトピックに対して、政党公式ページの根拠URL抽出→ページ取得→相対スコアリングを行いDBに保存します。</p>
+      <p class="small">選択中のトピックに対して、公式のみを実行しDBに保存します（外部ページは任意）。</p>
+      <p class="small">対象政党数（自動・rejected除外）: <span id="scorePartyCount">-</span></p>
       <div class="row">
-        <label>max_parties<input id="scoreMaxParties" type="number" min="1" max="100" value="10" /></label>
         <label>max_evidence_per_party<input id="scoreMaxEvidence" type="number" min="1" max="5" value="2" /></label>
+        <label style="min-width: 220px;">
+          <span class="small">外部ページも含める（mixed）</span>
+          <input id="scoreIncludeExternal" type="checkbox" />
+        </label>
+        <label style="min-width: 220px;">
+          <span class="small">policy index only</span>
+          <input id="scoreIndexOnly" type="checkbox" />
+        </label>
       </div>
       <div class="row" style="margin-top:10px;">
         <button class="button-link" id="runScoring">スコアリング実行</button>
@@ -214,12 +222,14 @@
           </select>
         </label>
       </div>
+      <label style="margin-top:10px;">policy_base_urls（改行区切り）<textarea id="partyPolicyUrls" placeholder="https://o-ishin.jp/policy/"></textarea></label>
       <label style="margin-top:10px;">evidence（JSON）<textarea id="partyEvidence" placeholder='{"note":"seed"}'></textarea></label>
       <div class="row" style="margin-top:10px;">
         <button class="button-link" id="createParty">登録（POST）</button>
         <button class="button-link" id="updateParty">更新（PATCH）</button>
         <button class="button-link" id="clearPartyForm">フォームクリア</button>
         <button class="button-link" id="refreshParties">一覧更新</button>
+        <button class="button-link" id="crawlPolicySources">政策URLをクロール</button>
       </div>
       <div id="partyList" style="margin-top:10px;"></div>
 

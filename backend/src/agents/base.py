@@ -27,6 +27,7 @@ class PolicyEvidenceClient(Protocol):
         topic: str,
         parties: List["ResolvedParty"],
         max_per_party: int = 3,
+        allowed_domains: List[str] | None = None,
     ) -> List["PolicyEvidence"]:
         ...
 

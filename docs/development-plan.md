@@ -22,11 +22,16 @@
 5. フロント可視化PoC（週7）  
    - トピック選択と1軸/2軸の簡易表示、詳細パネルに根拠・抜粋・版本情報  
    - EChartsによる動的切替（mode/entity/レンジ/散布図）
+6. 政策ページ起点クロール + RAG（週8-10）  
+   - 政策起点URL登録UIを追加（複数URL）  
+   - HTML/PDFクロール → チャンク化 → ベクトル化  
+   - RAG参照による根拠抽出をスコアリングに統合  
+   - 検索ベース処理は温存・併用可能にする  
 
 ## 2. タスク分解
 - 設計
   - [x] API契約の確定（topics/positions/detail + admin）  
-  - [ ] DBスキーマのDDLをAlembic/SQLAlchemy等でマイグレーション化  
+  - [x] DBスキーマのDDLをAlembic/SQLAlchemy等でマイグレーション化  
   - [x] 固定JSONスキーマ（stance_label/score/confidence/evidence/meta）のバリデーション定義
 - バックエンド基盤
   - [x] FastAPIプロジェクトセットアップ（settings, logging, dependency wiring）  
@@ -37,11 +42,11 @@
 - データパイプライン（MVP版）
   - [ ] Discovery/Resolution/Change検知のスタブキュー（in-memory queue可）  
   - [ ] party_registry/party_discovery_events への書き込み処理スタブ  
-  - [ ] クロール・採点のダミー処理（固定スコアを返す）
+  - [x] クロール・採点の実装（DB保存まで）
 - 可視化UI（後続）
-  - [ ] トピック一覧・検索・フィルタUI  
-  - [ ] 1軸/2軸表示（散布図/区間）  
-  - [ ] 詳細パネル（根拠・抜粋・版本情報）
+  - [x] トピック一覧（リスト選択）  
+  - [x] 1軸/2軸表示（散布図/区間）  
+  - [x] 詳細パネル（根拠・抜粋・版本情報）
 - 運用・品質
   - [ ] needs_review フローの管理画面（最低限のCRUD）  
   - [ ] 監査ログ・バージョン表示  
@@ -70,6 +75,7 @@
 - 監査可能性: 根拠URL欠如のスコアは必ず「不明/言及なし」にフォールバック。
 - 冪等性: discovery/resolveイベントは idempotency_key で重複防止。
 - セキュリティ: 管理APIは必ず認証を要求する（MVPではAPIキー想定）。
+- PDFの著作権/利用規約に注意（配布/再利用ポリシー確認）。
 
 ## 5. 直近アクション（この雛形の次）
 1) APIスキーマを確定し、Pydanticモデルを schemas.py に定義  
@@ -77,3 +83,28 @@
 3) Discovery/Resolution のイベントログ（party_discovery_events）への書き込み処理を実装  
 4) 簡易CI（lint/test）を設定  
 5) フロントエンドの技術選定とワイヤーフレーム作成
+6) 政策ページ起点クロール + RAG の仕様確定とDB設計
+## 2.1 政策ページインデックス化（追加計画）
+- 設計
+  - [x] `docs/policy-indexing-spec.md` の確定
+  - [x] 公式/混合のソース優先順位（インデックス vs 検索）の整理
+  - [x] index_only（インデックスのみ評価）の導入
+- 管理UI
+  - [x] 政党編集に `policy_base_urls` を追加（複数URL）
+  - [x] クロール実行/ステータス表示（HTML/PDF件数・エラー件数）
+- 公開UI
+  - [ ] トピック詳細に「情報の更新日（クロール日時）」を表示
+- クロール/取得
+  - [x] base_url配下のHTMLクロール
+  - [x] HTML内のPDF検出・取得
+  - [ ] 画像PDFの将来対応（生成AIの画像認識）
+  - [ ] robots.txt / レート制限 / サイズ制限
+- インデックス
+  - [x] HTML/PDF本文抽出
+  - [x] チャンク化（キーワード検索に利用）
+  - [ ] 埋め込み（pgvector or ローカル）
+  - [x] 文書/チャンクのメタ保存（URL/タイトル/取得日時）
+- スコアリング統合
+  - [x] official: インデックス優先、検索は補助
+  - [x] mixed: インデックス + 検索の併用
+  - [x] 根拠URL実在チェックの維持

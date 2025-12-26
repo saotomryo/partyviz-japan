@@ -25,6 +25,7 @@
 
 ## 管理UIの保存場所
 - `admin.html` の API Base / API Key / モデル名などはブラウザの localStorage に保存されます（`.env` とは別）。
+- 公開UIのテーマ選択（深夜/朝/昼）も localStorage に保存されます。
 
 ## Git管理の注意
 - `.env`, `.env.*` はコミットしないでください（既に `.gitignore` に登録済み）。

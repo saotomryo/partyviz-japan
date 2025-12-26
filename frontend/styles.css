@@ -14,6 +14,32 @@
   --radius: 14px;
 }
 
+body.theme-dawn {
+  --bg: #eef3f8;
+  --card: rgba(255, 255, 255, 0.95);
+  --panel: rgba(255, 255, 255, 0.9);
+  --accent: #1e8f68;
+  --accent-2: #2f6fde;
+  --text: #0e1228;
+  --muted: rgba(20, 25, 50, 0.58);
+  --border: rgba(20, 25, 50, 0.12);
+  --danger: #c0493f;
+  --shadow: 0 18px 40px rgba(16, 20, 40, 0.1);
+}
+
+body.theme-sunny {
+  --bg: #fbf7ef;
+  --card: rgba(255, 255, 255, 0.95);
+  --panel: rgba(255, 247, 236, 0.9);
+  --accent: #bd6a1e;
+  --accent-2: #2d8aa8;
+  --text: #2b1f12;
+  --muted: rgba(43, 31, 18, 0.55);
+  --border: rgba(87, 64, 40, 0.18);
+  --danger: #c14a35;
+  --shadow: 0 18px 40px rgba(87, 64, 40, 0.12);
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -24,6 +50,13 @@ body {
               radial-gradient(circle at 80% 0%, rgba(87, 209, 163, 0.25), transparent 30%),
               var(--bg);
   min-height: 100vh;
+}
+
+body.theme-dawn,
+body.theme-sunny {
+  background: radial-gradient(circle at 20% 20%, rgba(47, 111, 222, 0.18), transparent 32%),
+              radial-gradient(circle at 80% 0%, rgba(189, 106, 30, 0.16), transparent 34%),
+              var(--bg);
 }
 
 .hero {
@@ -90,6 +123,10 @@ select {
   padding: 22px 24px 40px;
 }
 
+.layout--single {
+  grid-template-columns: 1fr;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -106,6 +143,55 @@ select {
 .panel__header h2 {
   margin: 0;
   font-size: 16px;
+}
+
+.topic-select {
+  padding: 12px 16px 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.topic-select select {
+  width: 100%;
+  background: linear-gradient(180deg, rgba(22, 28, 60, 0.9), rgba(12, 16, 38, 0.95));
+  border: 1px solid rgba(122, 213, 255, 0.25);
+  border-radius: 14px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+  outline: none;
+  appearance: none;
+}
+
+body.theme-dawn .topic-select select,
+body.theme-sunny .topic-select select {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(245, 245, 245, 0.98));
+  border-color: rgba(31, 42, 75, 0.2);
+  box-shadow: 0 10px 24px rgba(16, 20, 40, 0.08);
+}
+
+.topic-select select option {
+  background: #0f142c;
+  color: var(--text);
+  padding: 6px 8px;
+}
+
+body.theme-dawn .topic-select select option,
+body.theme-sunny .topic-select select option {
+  background: #ffffff;
+  color: var(--text);
+}
+
+.topic-select select:focus {
+  border-color: rgba(122, 213, 255, 0.65);
+  box-shadow: 0 0 0 2px rgba(122, 213, 255, 0.2), 0 12px 24px rgba(0,0,0,0.3);
+}
+
+.topic-select .small {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .topic-list {
@@ -163,8 +249,18 @@ select {
   margin: 0 0 6px;
 }
 
+.content__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .muted {
   color: var(--muted);
+}
+
+.hidden {
+  display: none !important;
 }
 
 .badge {
@@ -182,12 +278,121 @@ select {
   gap: 12px;
 }
 
+.rubric-view {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.rubric-view__axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.rubric-view__axis-label {
+  max-width: 48%;
+}
+
+.rubric-view__axis-label--right {
+  text-align: right;
+  margin-left: auto;
+}
+
+.rubric-view__steps {
+  display: grid;
+  gap: 10px;
+}
+
+.rubric-view__step {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 12px;
+  align-items: start;
+  background: rgba(15, 20, 44, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.rubric-view__score {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.rubric-view__label {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.rubric-view__criteria {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.rubric-view__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(15, 20, 44, 0.55);
+}
+
+.rubric-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.rubric-table th,
+.rubric-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.rubric-table th {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.rubric-table__score {
+  font-weight: 700;
+  font-size: 14px;
+  width: 80px;
+  white-space: nowrap;
+}
+
+.rubric-table__label {
+  font-weight: 700;
+  width: 200px;
+}
+
+.rubric-table__criteria {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .plot {
   background: rgba(15, 20, 44, 0.55);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 16px 18px;
   box-shadow: var(--shadow);
+}
+
+body.theme-dawn .plot,
+body.theme-sunny .plot {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 .plot__header {
@@ -198,15 +403,27 @@ select {
   margin-bottom: 10px;
 }
 
+.plot__header > div {
+  flex: 1;
+}
+
 .plot__axis-label {
   font-size: 12px;
   color: var(--muted);
   max-width: 46%;
   line-height: 1.3;
+  flex: 1;
 }
 
 .plot__axis-label--left { text-align: left; }
-.plot__axis-label--right { text-align: right; }
+.plot__axis-label--right { text-align: right; margin-left: auto; }
+
+.plot__axis-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
 
 .plot__axis { margin-bottom: 14px; }
 
@@ -216,6 +433,12 @@ select {
   border-radius: 16px;
   background: rgba(255,255,255,0.02);
   border: 1px solid rgba(255,255,255,0.08);
+}
+
+body.theme-dawn .plot-axis,
+body.theme-sunny .plot-axis {
+  background: rgba(0,0,0,0.04);
+  border-color: rgba(0,0,0,0.12);
 }
 
 .plot-axis__band {
@@ -230,6 +453,11 @@ select {
   border: 1px solid rgba(255,255,255,0.08);
 }
 
+body.theme-dawn .plot-axis__band,
+body.theme-sunny .plot-axis__band {
+  border-color: rgba(0,0,0,0.15);
+}
+
 .plot-axis__zero {
   position: absolute;
   left: 50%;
@@ -239,6 +467,11 @@ select {
   transform: translateX(-1px);
   background: rgba(232, 236, 245, 0.55);
   z-index: 1;
+}
+
+body.theme-dawn .plot-axis__zero,
+body.theme-sunny .plot-axis__zero {
+  background: rgba(30, 35, 60, 0.35);
 }
 
 .plot-axis__tick {
@@ -310,6 +543,12 @@ select {
   background: rgba(255,255,255,0.04);
 }
 
+body.theme-dawn .plot-legend__item,
+body.theme-sunny .plot-legend__item {
+  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .plot-legend__swatch {
   width: 10px;
   height: 10px;
@@ -323,6 +562,212 @@ select {
   margin-top: 26px;
 }
 
+.axis-plot {
+  background: rgba(15, 20, 44, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+
+body.theme-dawn .axis-plot,
+body.theme-sunny .axis-plot {
+  background: rgba(255,255,255,0.8);
+  border-color: rgba(0,0,0,0.12);
+}
+
+.axis-plot__grid {
+  position: relative;
+  height: 420px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: radial-gradient(circle at 50% 50%, rgba(122,213,255,0.08), rgba(15,20,44,0.15));
+  overflow: hidden;
+}
+
+body.theme-dawn .axis-plot__grid,
+body.theme-sunny .axis-plot__grid {
+  border-color: rgba(0,0,0,0.12);
+  background: radial-gradient(circle at 50% 50%, rgba(47,111,222,0.12), rgba(0,0,0,0.02));
+}
+
+.axis-plot__zero-x,
+.axis-plot__zero-y {
+  position: absolute;
+  background: rgba(232, 236, 245, 0.55);
+}
+
+body.theme-dawn .axis-plot__zero-x,
+body.theme-dawn .axis-plot__zero-y,
+body.theme-sunny .axis-plot__zero-x,
+body.theme-sunny .axis-plot__zero-y {
+  background: rgba(30, 35, 60, 0.3);
+}
+
+.axis-plot__zero-x {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+}
+
+.axis-plot__zero-y {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+}
+
+.axis-plot__dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid rgba(232, 236, 245, 0.7);
+  transform: translate(calc(-50% + var(--dx, 0px)), calc(50% + var(--dy, 0px)));
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.35);
+  z-index: 5;
+}
+
+.axis-plot__dot:hover {
+  filter: brightness(1.15);
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+.axis-plot__dot::after {
+  content: attr(data-name);
+  position: absolute;
+  left: 50%;
+  bottom: 140%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: rgba(10, 14, 32, 0.92);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.35);
+}
+
+body.theme-dawn .axis-plot__dot::after,
+body.theme-sunny .axis-plot__dot::after {
+  background: rgba(255, 255, 255, 0.95);
+  color: rgba(20, 25, 50, 0.9);
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 18px rgba(16, 20, 40, 0.12);
+}
+
+.axis-plot__dot:hover::after,
+.axis-plot__dot:focus-visible::after {
+  opacity: 1;
+}
+
+.axis-plot__labels {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.axis-plot__labels span:last-child {
+  text-align: right;
+}
+
+.axis-plot__labels--y {
+  display: flex;
+  justify-content: space-between;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.axis-plot__axis-label {
+  position: absolute;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: rgba(10, 14, 32, 0.65);
+  border: 1px solid rgba(255,255,255,0.08);
+  z-index: 3;
+}
+
+body.theme-dawn .axis-plot__axis-label,
+body.theme-sunny .axis-plot__axis-label {
+  background: rgba(255,255,255,0.85);
+  border-color: rgba(0,0,0,0.12);
+  color: rgba(20, 25, 50, 0.8);
+}
+
+.axis-plot__axis-label--x {
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%) translateY(-16px);
+}
+
+.axis-plot__axis-label--y {
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%) translateX(0) rotate(-90deg);
+  transform-origin: left center;
+}
+
+.axis-plot__axis-end {
+  position: absolute;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(10, 14, 32, 0.75);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 4px 8px;
+  max-width: 36%;
+  line-height: 1.3;
+  z-index: 3;
+}
+
+body.theme-dawn .axis-plot__axis-end,
+body.theme-sunny .axis-plot__axis-end {
+  background: rgba(255,255,255,0.9);
+  border-color: rgba(0,0,0,0.12);
+  color: rgba(20, 25, 50, 0.8);
+}
+
+.axis-plot__axis-end--x-left {
+  left: 16px;
+  bottom: 16px;
+  transform: translateY(0);
+}
+
+.axis-plot__axis-end--x-right {
+  right: 16px;
+  bottom: 16px;
+  transform: translateY(0);
+  text-align: right;
+}
+
+.axis-plot__axis-end--y-top {
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%) translateY(10px);
+  text-align: center;
+}
+
+.axis-plot__axis-end--y-bottom {
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%) translateY(-10px);
+  text-align: center;
+}
+
 .plot-row {
   display: grid;
   grid-template-columns: minmax(180px, 300px) 1fr 56px;
@@ -332,6 +777,12 @@ select {
   border: 1px solid rgba(255,255,255,0.06);
   background: rgba(18, 23, 51, 0.5);
   border-radius: 14px;
+}
+
+body.theme-dawn .plot-row,
+body.theme-sunny .plot-row {
+  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .plot-row__title {

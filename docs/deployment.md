@@ -41,6 +41,7 @@
 ### 公開UIの参照先
 - `frontend/app.js` は `./data/snapshot.json` が読める場合は自動でスナップショットを使います
 - 強制したい場合は `?source=snapshot`（または `?snapshot=...`）を付与できます
+- ルーブリック表示（`rubric.html`）も `snapshot.json` を参照します
 
 ---
 

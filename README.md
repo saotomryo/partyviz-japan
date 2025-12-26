@@ -4,7 +4,7 @@
 
 - 仕様: 仕様書.md
 - 開発計画: docs/development-plan.md
-- バックエンド雛形: backend/
+- バックエンド: backend/
 
 ## 解説記事
 https://zenn.dev/ryo_saotome/articles/4bb384dfd438fe
@@ -67,7 +67,7 @@ python -m http.server 5173
 # ブラウザで http://localhost:5173 にアクセス
 ```
 
-バックエンドAPIが 8000 番で起動している前提です。ポートを変える場合は `frontend/app.js` の `API_BASE` を変更してください。
+バックエンドAPIが 8000 番で起動している前提です。ポートを変える場合はブラウザの localStorage (`partyviz_public_api_base`) を変更してください。
 
 
 ## 管理UI（トピック/ルーブリック/政党レジストリ/スコアリング）
@@ -84,7 +84,7 @@ python -m http.server 5173
 ## UI操作方法（現時点）
 
 ### 1) 管理UI（`/admin.html`）
-![管理UI](JPG/adminUI1.jpg) 
+![kanriUI](JPG/adminUI1.jpg) 
 
 **A. 初期設定**
 1. `API Base` にバックエンドURL（例: `http://localhost:8000`）を入力
@@ -101,8 +101,8 @@ python -m http.server 5173
 2. 「追加/更新」を押す
 
 **D. ルーブリック生成 → 有効化**
-![管理UI](JPG/adminUI2.jpg) 
-![管理UI](JPG/adminUI3.jpg) 
+![kanriUI](JPG/adminUI2.jpg) 
+![kanriUI](JPG/adminUI3.jpg) 
 1. トピックを選択
 2. 「ルーブリック生成（ドラフト）」で必要なら `axis` ヒントや `steps_count` を入力
 3. 「生成して保存（POST）」を押す
@@ -110,24 +110,30 @@ python -m http.server 5173
 5. 「Activate（POST）」で有効化（同一トピックの既存activeはarchivedへ）
 
 **E. 政党レジストリ（自動取得/手動/編集）**
-![管理UI](JPG/adminUI4.jpg)
+![kanriUI](JPG/adminUI4.jpg)
 - 自動取得: 「自動取得クエリ」を必要に応じて調整 → 「自動取得して反映」
 - 手動登録: `name_ja` / `official_home_url` / `allowed_domains` 等を入力 → 「登録（POST）」
 - 個別編集: 一覧の政党をクリック → フォームに反映 → `official_home_url` や `evidence(JSON)` を編集 → 「更新（PATCH）」
+- 政策URL登録/クロール: `policy_base_urls` に複数URLを登録 → 「政策URLをクロール」
 
 **F. スコアリング（実行 & 保存）**
 1. トピックを選択
-2. `max_parties` / `max_evidence_per_party` を調整（必要なら）
-3. 「スコアリング実行」を押す（根拠URL抽出→取得→相対スコア算出→DB保存）
-4. 「最新スコア表示」で最新結果を確認
+2. `max_evidence_per_party` を調整（必要なら）
+3. 外部ページも使う場合は「外部ページも含める（mixed）」をON
+4. 必要なら「policy index only」をON（検索ベースを使わず、インデックスのみ）
+5. 「スコアリング実行」を押す（根拠URL抽出→取得→相対スコア算出→DB保存）
+6. 「最新スコア表示」で最新結果を確認
 
 ### 2) メインUI（`/`）
 ![メインUI](JPG/mainUI.jpg) 
 ![メインUI](JPG/mainUI2.jpg)
 ![メインUI](JPG/mainUI3.jpg)
-1. 左の「トピック」一覧から対象トピックを選択
+![メインUI](JPG/mainUI4.jpg)
+1. 左のトピックリストから選択（1軸/2軸を切替可能）
 2. 上部の軸ラベル（-100/+100）を確認して、各政党の位置を把握
-3. 軸上の点、または各政党行の点をクリックすると、根拠（フルURL）を含む詳細オーバーレイを表示
+3. 軸上の点、または各政党行の点をクリックすると、根拠（URL/抜粋）を含む詳細オーバーレイを表示
+4. 「評価基準を見る」からルーブリックの詳細を確認
+5. テーマ（深夜/朝/昼）を切り替え可能
 
 ※ メインUIに「データがありません」と出る場合は、管理UIで「スコアリング実行」を行ってスコアがDBに保存されているか確認してください。
 
@@ -170,6 +176,7 @@ alembic upgrade head
 - 開発用データ削除（危険、`confirm=DELETE` 必須、`ADMIN_API_KEY` 必須）: `POST /admin/dev/purge`
 - スコアリング実行（根拠URL抽出→取得→相対スコア算出→DB保存）: `POST /admin/topics/{topic_id}/scores/run`
 - 最新スコア取得: `GET /admin/topics/{topic_id}/scores/latest`
+- ルーブリック取得（公開）: `GET /topics/{topic_id}/rubric`
 
 ## トラブルシュート
 - `401 Invalid API key`: `.env` の `ADMIN_API_KEY` と、管理UIの `X-API-Key` が一致しているか確認
@@ -182,6 +189,7 @@ alembic upgrade head
 - `alembic upgrade head` が通る
 - `uvicorn src.main:app --reload --port 8000` と `python -m http.server 5173` でUIが開ける
 - `http://localhost:5173/admin.html` でトピック作成→スコアリング実行→ `http://localhost:5173/` で可視化が表示される
+- `http://localhost:5173/rubric.html?topic=ai` でルーブリック詳細を表示
 
 コマンドラインで実行する場合:
 
@@ -199,6 +207,7 @@ python scripts/discover_party_registry.py --query "日本の国政政党 公式�
 低コスト/無料での公開案は `docs/deployment.md` を参照してください。
 静的公開（APIを公開しない）に切り替える場合は、管理UIから `snapshot.json` を出力して `frontend/data/snapshot.json` として配置します（詳細は `docs/deployment.md`）。
 GitHub Pages で `frontend/` を公開する場合は、GitHub Actions によるデプロイ（`.github/workflows/pages.yml`）を使います（Pages設定の Source を GitHub Actions に変更）。
+スナップショットにはルーブリックやスコア実行情報も含まれます。
 
 ## ライセンス
 MIT License（`LICENSE` を参照）
