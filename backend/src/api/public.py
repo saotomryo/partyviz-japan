@@ -112,7 +112,10 @@ def get_topic_positions(
         else datetime.now(timezone.utc).isoformat()
     )
 
-    party_map = {p.party_id: p for p in db.scalars(select(models.PartyRegistry))}
+    party_map = {
+        p.party_id: p
+        for p in db.scalars(select(models.PartyRegistry).where(models.PartyRegistry.status != "rejected"))
+    }
     score_by_party_id = {s.party_id: s for s in scores}
 
     items: list[ScoreItem] = []

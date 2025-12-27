@@ -84,6 +84,12 @@
         <div class="row">
         <label>topic_id（任意）<input id="topicId" placeholder="（空なら自動生成）" /></label>
         <label>name<input id="topicName" placeholder="財政規律" /></label>
+        <label style="min-width: 140px;">active
+          <select id="topicActive">
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </label>
       </div>
       <label style="margin-top:10px;">description<textarea id="topicDesc" placeholder="積極財政か規律重視か"></textarea></label>
       <label style="margin-top:10px;">search_subkeywords（自動生成・確認用）<textarea id="topicSubkeywords" readonly placeholder="（追加/更新時に生成されます）"></textarea></label>

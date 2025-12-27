@@ -9,7 +9,13 @@ from ..db import models
 
 
 def list_topics(db: Session) -> list[models.Topic]:
-    return list(db.scalars(select(models.Topic).order_by(models.Topic.topic_id.asc())))
+    return list(
+        db.scalars(
+            select(models.Topic)
+            .where(models.Topic.is_active.is_(True))
+            .order_by(models.Topic.topic_id.asc())
+        )
+    )
 
 
 def get_topic(db: Session, topic_id: str) -> models.Topic | None:

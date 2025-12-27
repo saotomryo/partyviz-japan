@@ -82,6 +82,7 @@ class Topic(BaseModel):
     topic_id: str
     name: str
     description: Optional[str] = None
+    is_active: Optional[bool] = True
     model_config = ConfigDict(
         json_schema_extra={
             "example": {"topic_id": "tax", "name": "税制", "description": "所得税・法人税・消費税などの方針"}
@@ -263,6 +264,7 @@ class TopicCreate(BaseModel):
     name: str
     description: Optional[str] = None
     search_subkeywords: List[str] = Field(default_factory=list)
+    is_active: Optional[bool] = True
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -272,6 +274,7 @@ class TopicCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
     topic_id: Optional[str] = None
+    is_active: Optional[bool] = True
 
 
 class TopicRubricCreate(BaseModel):

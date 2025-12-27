@@ -370,12 +370,18 @@ class GeminiLLMSearchClient:
             data = parse_json(text)
         except Exception:
             return []
+        if not isinstance(data, list):
+            return []
         results: List[PolicyEvidence] = []
         grounded_set = {OpenAILLMSearchClient._normalize_compare_url(u) for u in (self.last_grounding_urls or []) if u}
         for item in data:
+            if not isinstance(item, dict):
+                continue
             party_name = item.get("party_name") or ""
             evidence_items = []
             for ev in item.get("evidence", []) or []:
+                if not isinstance(ev, dict):
+                    continue
                 url = ev.get("evidence_url") or ev.get("url")
                 quote = ev.get("quote") or ""
                 url = OpenAILLMSearchClient._normalize_http_url(url or "")

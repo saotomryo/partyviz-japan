@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PartyViz - 取得とスコアリングの方法</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <p class="eyebrow">PartyViz</p>
+      <h1>データ取得とスコアリングの方法</h1>
+      <p class="lede">取得範囲や評価の限界を明確にし、誤読や過信を防ぐための説明ページです。</p>
+      <div class="controls">
+        <a class="button-link" href="index.html">← 公開UIへ戻る</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout layout--single">
+    <section class="content" style="width: 100%;">
+      <div class="content__header">
+        <div>
+          <p class="eyebrow">概要</p>
+          <h2>一次情報を中心に自動取得し、生成AIでスコアリング</h2>
+          <p class="muted">公式一次情報を基準にしていますが、取得漏れや解釈のズレが起こり得ます。</p>
+        </div>
+      </div>
+
+      <div class="about-grid">
+        <section class="about-card">
+          <h3>1. データ取得の範囲</h3>
+          <ul>
+            <li>政党・政治家の公式サイト、政策ページ、公式PDFを中心に取得します。</li>
+            <li>公式ページの全リンクを網羅できるとは限らず、未取得のページが存在します。</li>
+            <li>取得時点のページ内容に依存するため、更新や削除で内容が変わる可能性があります。</li>
+          </ul>
+        </section>
+
+        <section class="about-card">
+          <h3>2. スコアリングの方法</h3>
+          <ul>
+            <li>取得した本文・抜粋を生成AIに渡し、トピックごとの立場を数値化します。</li>
+            <li>スコアは相対評価であり、厳密な事実認定を示すものではありません。</li>
+            <li>根拠URLと抜粋を併記し、判断材料として確認できるようにしています。</li>
+          </ul>
+        </section>
+
+        <section class="about-card">
+          <h3>3. 想定される誤り・限界</h3>
+          <ul>
+            <li>取得漏れにより、特定の政策が反映されないことがあります。</li>
+            <li>文脈の取り違えや要約の偏りによって、立場が過大/過小評価される場合があります。</li>
+            <li>公式サイト外の情報は原則参照しないため、最新の動きが反映されないことがあります。</li>
+          </ul>
+        </section>
+      </div>
+
+      <div class="about-footnote">
+        <p>本サイトの情報は参考情報です。最終的な判断は、公式発表・原文の確認を推奨します。</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function() {
+      var theme = localStorage.getItem("partyviz_public_theme") || "midnight";
+      document.body.classList.remove("theme-dawn", "theme-sunny");
+      if (theme === "dawn") document.body.classList.add("theme-dawn");
+      if (theme === "sunny") document.body.classList.add("theme-sunny");
+    })();
+  </script>
+</body>
+</html>

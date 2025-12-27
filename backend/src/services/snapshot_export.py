@@ -115,7 +115,13 @@ def build_topic_positions(
     scores = public_data.list_scores_for_run(db, run.run_id)
     score_map = {s.party_id: s for s in scores}
 
-    parties = list(db.scalars(select(models.PartyRegistry).order_by(models.PartyRegistry.name_ja.asc())))
+    parties = list(
+        db.scalars(
+            select(models.PartyRegistry)
+            .where(models.PartyRegistry.status != "rejected")
+            .order_by(models.PartyRegistry.name_ja.asc())
+        )
+    )
     topic_version = f"rubric:v{rubric.version}" if rubric else "rubric:none"
     calc_version = run.created_at.isoformat() if getattr(run, "created_at", None) else _now_utc().isoformat()
     fetched_at = run.created_at or _now_utc()

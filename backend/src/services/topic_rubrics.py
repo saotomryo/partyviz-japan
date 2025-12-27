@@ -36,12 +36,14 @@ def upsert_topic(db: Session, payload: TopicCreate) -> models.Topic:
     if topic:
         topic.name = payload.name
         topic.description = payload.description
+        topic.is_active = True if payload.is_active is None else bool(payload.is_active)
         topic.search_subkeywords = _generate_subkeywords(payload.name, payload.description)
         db.commit()
         db.refresh(topic)
         return topic
 
     topic = models.Topic(topic_id=payload.topic_id, name=payload.name, description=payload.description)
+    topic.is_active = True if payload.is_active is None else bool(payload.is_active)
     topic.search_subkeywords = _generate_subkeywords(payload.name, payload.description)
     db.add(topic)
     db.commit()

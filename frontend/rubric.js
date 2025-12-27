@@ -10,6 +10,13 @@ const rubricBodyEl = document.getElementById("rubricBody");
 let snapshotData = null;
 let dataSource = "api";
 
+function applyTheme(theme) {
+  const themeValue = (theme || "midnight").toLowerCase();
+  document.body.classList.remove("theme-dawn", "theme-sunny");
+  if (themeValue === "dawn") document.body.classList.add("theme-dawn");
+  if (themeValue === "sunny") document.body.classList.add("theme-sunny");
+}
+
 function getQueryParam(key) {
   const url = new URL(window.location.href);
   return url.searchParams.get(key);
@@ -115,6 +122,7 @@ function renderRubric(rubric, topic) {
 
 (async () => {
   try {
+    applyTheme(localStorage.getItem("partyviz_public_theme") || "midnight");
     await tryLoadSnapshot();
     const topicId = getQueryParam("topic");
     if (!topicId) throw new Error("topic is required");

@@ -13,6 +13,7 @@ const topicIdInput = document.getElementById("topicId");
 const topicNameInput = document.getElementById("topicName");
 const topicDescInput = document.getElementById("topicDesc");
 const topicSubkeywordsInput = document.getElementById("topicSubkeywords");
+const topicActiveEl = document.getElementById("topicActive");
 
 const selTopicIdEl = document.getElementById("selTopicId");
 const selTopicTitleEl = document.getElementById("selTopicTitle");
@@ -153,7 +154,7 @@ function renderTopics(topics) {
     li.className = "topic-item";
     li.innerHTML = `
       <p class="eyebrow">${t.topic_id}</p>
-      <p class="title">${t.name}</p>
+      <p class="title">${t.name} ${t.is_active === false ? '<span class="pill">inactive</span>' : ""}</p>
       <p class="muted">${t.description || ""}</p>
     `;
     li.addEventListener("click", () => selectTopic(t));
@@ -178,6 +179,7 @@ function selectTopic(topic) {
   topicDescInput.value = topic.description || "";
   const kws = topic.search_subkeywords || [];
   topicSubkeywordsInput.value = kws.length ? kws.join(", ") : "（生成結果が空です）";
+  if (topicActiveEl) topicActiveEl.value = String(topic.is_active !== false);
 
   genTopicNameEl.value = topic.name;
   genDescEl.value = topic.description || "";
@@ -209,11 +211,11 @@ async function upsertTopic() {
     const data = topic_id
       ? await request(`/admin/topics/${encodeURIComponent(topic_id)}`, {
           method: "PUT",
-          body: { topic_id, name, description },
+          body: { topic_id, name, description, is_active: topicActiveEl ? topicActiveEl.value === "true" : true },
         })
       : await request(`/admin/topics`, {
           method: "POST",
-          body: { name, description },
+          body: { name, description, is_active: topicActiveEl ? topicActiveEl.value === "true" : true },
         });
     selectedTopic = data;
     await loadTopics();

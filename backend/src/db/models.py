@@ -41,6 +41,7 @@ class Topic(Base):
     name = Column(Text, nullable=False)
     description = Column(Text)
     search_subkeywords = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    is_active = Column(sa.Boolean, nullable=False, server_default=text("true"))
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text("now()"))
 
