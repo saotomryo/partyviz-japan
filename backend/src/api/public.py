@@ -9,6 +9,7 @@ from ..db import get_db
 from ..db import models
 from ..schemas import (
     Evidence,
+    PartyRadarResponse,
     ScoreItem,
     ScoreMeta,
     Topic,
@@ -18,6 +19,7 @@ from ..schemas import (
     TopicsResponse,
 )
 from ..services import public_data
+from ..services import radar as radar_service
 
 
 router = APIRouter()
@@ -292,3 +294,43 @@ def get_topic_detail(
         axis_b_label=axis_right,
         score=score,
     )
+
+
+@router.get("/entities/{entity_id}/radar", response_model=PartyRadarResponse)
+def get_party_radar(
+    entity_id: str,
+    scope: str = Query("official", pattern="^(official|mixed)$"),
+    db: Session = Depends(get_db),
+) -> PartyRadarResponse:
+    try:
+        from uuid import UUID
+
+        entity_uuid = UUID(entity_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="entity_id must be party_id (uuid)")
+
+    party = db.get(models.PartyRegistry, entity_uuid)
+    if not party or getattr(party, "status", None) == "rejected":
+        raise HTTPException(status_code=404, detail="party not found")
+
+    payload = radar_service.build_party_radar(
+        db,
+        party_id=entity_uuid,
+        party_name=getattr(party, "name_ja", None),
+        scope=scope,
+    )
+    return PartyRadarResponse.model_validate(payload)
+
+
+@router.get("/radar/parties", response_model=list[PartyRadarResponse])
+def list_parties_radar(
+    scope: str = Query("official", pattern="^(official|mixed)$"),
+    include_topics: int = Query(0, ge=0, le=1, description="カテゴリ内のトピック明細も返す(1)か"),
+    db: Session = Depends(get_db),
+) -> list[PartyRadarResponse]:
+    payloads = radar_service.build_all_party_radars(
+        db,
+        scope=scope,
+        include_topics=bool(int(include_topics)),
+    )
+    return [PartyRadarResponse.model_validate(p) for p in payloads]

@@ -134,6 +134,200 @@ async function getDetail(entityId, topicId, mode, scope) {
   );
 }
 
+function categorizeTopicForRadar(topicId, topicName) {
+  const tid = (topicId || "").trim().toLowerCase();
+  const name = (topicName || "").trim().toLowerCase();
+  const text = `${tid} ${name}`;
+  if (["財政", "税", "消費税", "賃金", "物価", "成長", "産業", "経済", "金融", "最低賃金"].some((k) => text.includes(k))) {
+    return { key: "economy", label: "経済・財政" };
+  }
+  if (["社会保障", "年金", "医療", "介護", "子育て", "教育", "奨学", "保育"].some((k) => text.includes(k))) {
+    return { key: "welfare", label: "社会保障・子育て" };
+  }
+  if (["安全保障", "防衛", "外交", "自衛隊", "反撃", "日米", "中国", "北朝鮮"].some((k) => text.includes(k))) {
+    return { key: "security", label: "外交・安全保障" };
+  }
+  if (["人権", "ジェンダー", "夫婦別姓", "lgbt", "同性", "移民", "難民", "入管", "表現"].some((k) => text.includes(k))) {
+    return { key: "rights", label: "人権・多様性" };
+  }
+  if (["デジタル", "行政", "規制改革", "ai", "人工知能", "dx", "マイナン"].some((k) => text.includes(k))) {
+    return { key: "digital", label: "デジタル・行政改革" };
+  }
+  return { key: "other", label: "その他" };
+}
+
+function isMissingScoreItemForRadar(scoreItem) {
+  if (!scoreItem) return true;
+  if (scoreItem.stance_label !== "not_mentioned") return false;
+  if (Number(scoreItem.stance_score || 0) !== 0) return false;
+  if (Number(scoreItem.confidence || 0) !== 0) return false;
+  const rationale = String(scoreItem.rationale || "");
+  if (rationale.includes("スコア未作成") || rationale.includes("スコアがありません") || rationale.includes("未評価")) {
+    return true;
+  }
+  const hasEvidence = Array.isArray(scoreItem.evidence) && scoreItem.evidence.some((ev) => ev?.url);
+  return !hasEvidence;
+}
+
+function medianOfSorted(numbers) {
+  if (!numbers.length) return null;
+  const mid = Math.floor(numbers.length / 2);
+  if (numbers.length % 2 === 1) return numbers[mid];
+  return (numbers[mid - 1] + numbers[mid]) / 2;
+}
+
+async function getRadar(entityId, scope) {
+  const scopeNorm = (scope || "official").toLowerCase();
+  if (dataSource !== "snapshot") {
+    return fetchJSON(`${getApiBase()}/entities/${entityId}/radar?scope=${encodeURIComponent(scopeNorm)}`);
+  }
+
+  const categoryOrder = [
+    { key: "economy", label: "経済・財政" },
+    { key: "welfare", label: "社会保障・子育て" },
+    { key: "security", label: "外交・安全保障" },
+    { key: "rights", label: "人権・多様性" },
+    { key: "digital", label: "デジタル・行政改革" },
+    { key: "other", label: "その他" },
+  ];
+
+  const pointsByCat = new Map(categoryOrder.map((c) => [c.key, []]));
+  const topics = (snapshotData?.topics || []).filter((t) => t?.is_active !== false);
+  let included = 0;
+
+  topics.forEach((t) => {
+    const p = snapshotData.positions?.[t.topic_id];
+    const score = p?.scores?.find((x) => x.entity_id === entityId);
+    if (!p || !score) return;
+    if (isMissingScoreItemForRadar(score)) return;
+    const cat = categorizeTopicForRadar(t.topic_id, t.name);
+    const bucket = pointsByCat.get(cat.key) || [];
+    bucket.push({
+      topic_id: t.topic_id,
+      topic_name: t.name,
+      stance_score: Number(score.stance_score || 0),
+      stance_label: score.stance_label,
+      confidence: Number(score.confidence || 0),
+    });
+    pointsByCat.set(cat.key, bucket);
+    included += 1;
+  });
+
+  const categories = categoryOrder.map((cat) => {
+    const pts = pointsByCat.get(cat.key) || [];
+    const scores = pts.map((x) => x.stance_score).sort((a, b) => a - b);
+    return {
+      key: cat.key,
+      label: cat.label,
+      count: scores.length,
+      median: medianOfSorted(scores),
+      min: scores.length ? scores[0] : null,
+      max: scores.length ? scores[scores.length - 1] : null,
+      topics: pts.slice().sort((a, b) => String(a.topic_id).localeCompare(String(b.topic_id))),
+    };
+  });
+
+  return {
+    entity_type: "party",
+    entity_id: entityId,
+    entity_name: null,
+    scope: scopeNorm,
+    topic_total: topics.length,
+    topic_included: included,
+    categories,
+  };
+}
+
+async function getAllPartiesRadar(scope) {
+  const scopeNorm = (scope || "official").toLowerCase();
+  if (dataSource !== "snapshot") {
+    return fetchJSON(`${getApiBase()}/radar/parties?scope=${encodeURIComponent(scopeNorm)}&include_topics=0`);
+  }
+
+  const categoryOrder = [
+    { key: "economy", label: "経済・財政" },
+    { key: "welfare", label: "社会保障・子育て" },
+    { key: "security", label: "外交・安全保障" },
+    { key: "rights", label: "人権・多様性" },
+    { key: "digital", label: "デジタル・行政改革" },
+    { key: "other", label: "その他" },
+  ];
+
+  const topics = (snapshotData?.topics || []).filter((t) => t?.is_active !== false);
+  const topicNameById = new Map(topics.map((t) => [t.topic_id, t.name]));
+
+  const partyById = new Map();
+  topics.some((t) => {
+    const p = snapshotData.positions?.[t.topic_id];
+    if (p?.scores?.length) {
+      p.scores.forEach((s) => {
+        partyById.set(s.entity_id, { entity_id: s.entity_id, entity_name: s.entity_name || s.entity_id });
+      });
+      return true;
+    }
+    return false;
+  });
+
+  const partyCategoryScores = new Map(); // partyId -> catKey -> scores[]
+  const partyIncludedTopics = new Map(); // partyId -> Set(topic_id)
+
+  const ensureBucket = (partyId, catKey) => {
+    if (!partyCategoryScores.has(partyId)) partyCategoryScores.set(partyId, new Map());
+    const map = partyCategoryScores.get(partyId);
+    if (!map.has(catKey)) map.set(catKey, []);
+    return map.get(catKey);
+  };
+
+  const ensureTopicSet = (partyId) => {
+    if (!partyIncludedTopics.has(partyId)) partyIncludedTopics.set(partyId, new Set());
+    return partyIncludedTopics.get(partyId);
+  };
+
+  topics.forEach((t) => {
+    const p = snapshotData.positions?.[t.topic_id];
+    if (!p?.scores?.length) return;
+    const topicName = topicNameById.get(t.topic_id) || t.name || t.topic_id;
+    const cat = categorizeTopicForRadar(t.topic_id, topicName);
+    p.scores.forEach((s) => {
+      if (isMissingScoreItemForRadar(s)) return;
+      const scores = ensureBucket(s.entity_id, cat.key);
+      scores.push(Number(s.stance_score || 0));
+      ensureTopicSet(s.entity_id).add(t.topic_id);
+      if (!partyById.has(s.entity_id)) {
+        partyById.set(s.entity_id, { entity_id: s.entity_id, entity_name: s.entity_name || s.entity_id });
+      }
+    });
+  });
+
+  const parties = Array.from(partyById.values()).sort((a, b) => String(a.entity_name).localeCompare(String(b.entity_name), "ja"));
+
+  return parties.map((party) => {
+    const catMap = partyCategoryScores.get(party.entity_id) || new Map();
+    const included = partyIncludedTopics.get(party.entity_id) || new Set();
+    const categories = categoryOrder.map((cat) => {
+      const scores = (catMap.get(cat.key) || []).slice().sort((a, b) => a - b);
+      return {
+        key: cat.key,
+        label: cat.label,
+        count: scores.length,
+        median: medianOfSorted(scores),
+        min: scores.length ? scores[0] : null,
+        max: scores.length ? scores[scores.length - 1] : null,
+        topics: [],
+      };
+    });
+    return {
+      entity_type: "party",
+      entity_id: party.entity_id,
+      entity_name: party.entity_name,
+      scope: scopeNorm,
+      topic_total: topics.length,
+      topic_included: included.size,
+      categories,
+    };
+  });
+}
+
 function stanceColorClass(label) {
   if (label === "oppose") return "chip stance danger";
   return "chip stance";
@@ -162,6 +356,9 @@ const PARTY_COLORS = [
   "#f06bff",
   "#6bf0ff",
 ];
+
+const RADAR_MIN_COLOR = "#ff7f6b";
+const RADAR_MAX_COLOR = "#57d1a3";
 
 function buildPartyColorMap(scores) {
   const items = scores
@@ -355,6 +552,51 @@ function renderPositionsBlock(data, scopeLabel, scopeValue) {
   `;
 }
 
+function renderRadarSummary(radar) {
+  const categories = Array.isArray(radar?.categories) ? radar.categories : [];
+  const rows = categories
+    .filter((c) => c && typeof c.key === "string")
+    .map((c) => {
+      const has = typeof c.median === "number" && typeof c.min === "number" && typeof c.max === "number";
+      const min = has ? c.min : null;
+      const max = has ? c.max : null;
+      const med = has ? c.median : null;
+      const left = has ? scoreToPercent(min) : 0;
+      const right = has ? scoreToPercent(max) : 0;
+      const dot = has ? scoreToPercent(med) : 0;
+      const width = has ? Math.max(2, right - left) : 0;
+      return `
+        <div class="radar-row">
+          <div class="radar-row__label">
+            <div class="radar-row__title">${escapeAttr(c.label || c.key)}</div>
+            <div class="radar-row__meta muted">対象: ${Number(c.count || 0)}件</div>
+          </div>
+          <div class="radar-row__track">
+            <div class="radar-track">
+              <div class="radar-track__zero"></div>
+              ${has ? `<div class="radar-track__range" style="left:${left}%; width:${width}%;"></div>` : ""}
+              ${has ? `<div class="radar-track__dot" style="left:${dot}%;"></div>` : ""}
+              <div class="radar-track__tick radar-track__tick--left">-100</div>
+              <div class="radar-track__tick radar-track__tick--right">+100</div>
+            </div>
+          </div>
+          <div class="radar-row__values">
+            ${has ? `<div class="radar-row__value">中央値: ${med}</div><div class="muted">範囲: ${min}〜${max}</div>` : `<div class="muted">データなし</div>`}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="radar-summary__head">
+      <h4>大項目サマリ（中央値＋ブレ幅）</h4>
+      <div class="muted">対象: ${Number(radar?.topic_included || 0)}/${Number(radar?.topic_total || 0)} トピック</div>
+    </div>
+    <div class="radar-rows">${rows}</div>
+  `;
+}
+
 function renderDetail(data) {
   const alt = data._alt || null;
   const s = data.score;
@@ -400,6 +642,13 @@ function renderDetail(data) {
     </div>
     ${altSummary}
     <p>${s.rationale}</p>
+    <div id="radarSummary" class="radar-summary">
+      <div class="radar-summary__head">
+        <h4>大項目サマリ（中央値＋ブレ幅）</h4>
+        <div class="muted">スコアなしは除外</div>
+      </div>
+      <div class="muted">読み込み中...</div>
+    </div>
     <h4>根拠</h4>
     <ul class="evidence-list">${evidence}</ul>
     <p class="muted">topic_version: ${s.meta.topic_version} / calc_version: ${s.meta.calc_version}</p>
@@ -483,6 +732,315 @@ function renderAxisComparison(xData, yData) {
   `;
 }
 
+function radarScoreToRadius(score, maxRadius) {
+  const s = typeof score === "number" ? score : 0;
+  return maxRadius * ((s + 100) / 200);
+}
+
+function renderRadarSvg(radar, color, opts = {}) {
+  const categories = Array.isArray(radar?.categories) ? radar.categories : [];
+  const n = categories.length || 1;
+  const size = Number(opts.size || 200);
+  const cx = size / 2;
+  const cy = size / 2;
+  const maxR = Math.max(48, Math.floor(size * 0.36));
+  const showAxisLabels = Boolean(opts.showAxisLabels);
+  const showScaleLabels = Boolean(opts.showScaleLabels);
+  const showRangeBand = opts.showRangeBand !== false;
+  const fontSize = Math.max(10, Math.min(12, Math.floor(size / 30)));
+
+  const splitLabel = (text) => {
+    const t = String(text || "").trim();
+    if (!t) return [];
+    if (t.includes("・") && t.length >= 8) {
+      const parts = t.split("・").filter(Boolean);
+      if (parts.length >= 2) return [parts[0], parts.slice(1).join("・")];
+    }
+    if (t.length >= 12) {
+      const mid = Math.ceil(t.length / 2);
+      return [t.slice(0, mid), t.slice(mid)];
+    }
+    return [t];
+  };
+
+  const angleFor = (i) => (-90 + (360 / n) * i) * (Math.PI / 180);
+  const pointFor = (i, score) => {
+    const a = angleFor(i);
+    const r = radarScoreToRadius(score, maxR);
+    return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+  };
+
+  const polygonPath = (pts) => {
+    if (!pts.length) return "";
+    const head = pts[0];
+    const rest = pts.slice(1);
+    return `M ${head.x.toFixed(1)} ${head.y.toFixed(1)} ${rest
+      .map((p) => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+      .join(" ")} Z`;
+  };
+
+  const rings = [0.25, 0.5, 0.75, 1.0]
+    .map((p) => `<circle cx="${cx}" cy="${cy}" r="${(maxR * p).toFixed(1)}" class="radar-svg__ring" />`)
+    .join("");
+  const zeroRing = `<circle cx="${cx}" cy="${cy}" r="${(maxR * 0.5).toFixed(1)}" class="radar-svg__zero-ring" />`;
+  const axes = categories
+    .map((_, i) => {
+      const a = angleFor(i);
+      const x2 = cx + Math.cos(a) * maxR;
+      const y2 = cy + Math.sin(a) * maxR;
+      return `<line x1="${cx}" y1="${cy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" class="radar-svg__axis" />`;
+    })
+    .join("");
+
+  const axisLabels = showAxisLabels
+    ? categories
+        .map((c, i) => {
+          const a = angleFor(i);
+          const labelR = maxR + Math.max(18, Math.floor(size * 0.08));
+          let x = cx + Math.cos(a) * labelR;
+          let y = cy + Math.sin(a) * labelR;
+          const text = String(c?.label || c?.key || "");
+          const dx = x - cx;
+          const dy = y - cy;
+          const anchor = Math.abs(dx) < 6 ? "middle" : dx > 0 ? "start" : "end";
+          const baseline = "middle";
+          const pad = Math.max(10, Math.floor(size * 0.04));
+          if (anchor === "start") x = Math.min(x, size - pad);
+          if (anchor === "end") x = Math.max(x, pad);
+          y = Math.min(size - pad, Math.max(pad, y));
+
+          const lines = splitLabel(text);
+          const baseY = lines.length > 1 ? y - fontSize * 0.55 : y;
+          const tspans = lines
+            .map((line, idx) => {
+              const dy = idx === 0 ? 0 : fontSize * 1.05;
+              return `<tspan x="${x.toFixed(1)}" dy="${dy.toFixed(1)}">${escapeAttr(line)}</tspan>`;
+            })
+            .join("");
+          return `<text x="${x.toFixed(1)}" y="${baseY.toFixed(1)}" text-anchor="${anchor}" dominant-baseline="${baseline}" class="radar-svg__label" style="font-size:${fontSize}px;">${tspans}</text>`;
+        })
+        .join("")
+    : "";
+
+  const scaleLabels = showScaleLabels
+    ? `
+      <text x="${cx.toFixed(1)}" y="${(cy + 10).toFixed(1)}" text-anchor="middle" class="radar-svg__scale">-100</text>
+      <text x="${cx.toFixed(1)}" y="${(cy - maxR - 10).toFixed(1)}" text-anchor="middle" class="radar-svg__scale">+100</text>
+    `
+    : "";
+
+  const points = categories.map((c, i) => pointFor(i, typeof c.median === "number" ? c.median : 0));
+  const polygonPoints = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+
+  const minPoints = categories.map((c, i) => pointFor(i, typeof c.min === "number" ? c.min : 0));
+  const maxPoints = categories.map((c, i) => pointFor(i, typeof c.max === "number" ? c.max : 0));
+  const minPath = polygonPath(minPoints);
+  const maxPath = polygonPath(maxPoints);
+  const rangeBand = showRangeBand
+    ? `<path d="${maxPath} ${minPath}" fill="${color}" fill-opacity="0.10" fill-rule="evenodd" class="radar-svg__band" />`
+    : "";
+
+  const maxStroke = showRangeBand
+    ? `<path d="${maxPath}" fill="none" stroke="${RADAR_MAX_COLOR}" stroke-opacity="0.75" stroke-width="2.2" class="radar-svg__max" />`
+    : "";
+  const minStroke = showRangeBand
+    ? `<path d="${minPath}" fill="none" stroke="${RADAR_MIN_COLOR}" stroke-opacity="0.75" stroke-width="2.2" class="radar-svg__min" />`
+    : "";
+
+  const rangeTicks = showRangeBand
+    ? categories
+        .map((c, i) => {
+          const min = typeof c.min === "number" ? c.min : 0;
+          const max = typeof c.max === "number" ? c.max : 0;
+          const a = angleFor(i);
+          const r1 = radarScoreToRadius(min, maxR);
+          const r2 = radarScoreToRadius(max, maxR);
+          const x1 = cx + Math.cos(a) * r1;
+          const y1 = cy + Math.sin(a) * r1;
+          const x2 = cx + Math.cos(a) * r2;
+          const y2 = cy + Math.sin(a) * r2;
+          return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" class="radar-svg__range-line" />`;
+        })
+        .join("")
+    : "";
+
+  const dots = categories
+    .map((c, i) => {
+      const p = points[i];
+      const med = typeof c.median === "number" ? c.median : null;
+      const min = typeof c.min === "number" ? c.min : null;
+      const max = typeof c.max === "number" ? c.max : null;
+      const title = `${c.label || c.key}: ${
+        med === null ? "データなし" : `中央値 ${med} / 範囲 ${min}〜${max} / ${Number(c.count || 0)}件`
+      }`;
+      return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.4" class="radar-svg__dot" style="fill:${color};"><title>${escapeAttr(title)}</title></circle>`;
+    })
+    .join("");
+
+  return `
+    <svg class="radar-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="radar" style="overflow: visible;">
+      ${rings}
+      ${zeroRing}
+      ${axes}
+      ${axisLabels}
+      ${scaleLabels}
+      ${rangeBand}
+      ${maxStroke}
+      ${minStroke}
+      ${rangeTicks}
+      <polygon points="${polygonPoints}" fill="${color}" fill-opacity="0.16" stroke="${color}" stroke-width="2.2" />
+      ${dots}
+      <circle cx="${cx}" cy="${cy}" r="2.2" class="radar-svg__center" />
+    </svg>
+  `;
+}
+
+function renderRadarLegend(partyColor) {
+  return `
+    <div class="radar-legend" role="note" aria-label="凡例">
+      <div class="radar-legend__item"><span class="radar-legend__swatch" style="background:${escapeAttr(partyColor)};"></span>中央値（多角形）</div>
+      <div class="radar-legend__item"><span class="radar-legend__line radar-legend__line--max"></span>最大（線）</div>
+      <div class="radar-legend__item"><span class="radar-legend__line radar-legend__line--min"></span>最小（線）</div>
+      <div class="radar-legend__item"><span class="radar-legend__band" style="background:${escapeAttr(partyColor)};"></span>範囲（塗り）</div>
+    </div>
+  `;
+}
+
+function renderRadarGallery(radars) {
+  const items = Array.isArray(radars) ? radars : [];
+  if (!items.length) return `<p class="muted">レーダーデータがありません。</p>`;
+
+  const getActiveTopicsForMapping = () => {
+    if (dataSource === "snapshot") {
+      return (snapshotData?.topics || []).filter((t) => t?.is_active !== false);
+    }
+    return (topicsCache || []).filter((t) => t?.is_active !== false);
+  };
+
+  const partyList = items
+    .map((r) => ({ id: r.entity_id, name: r.entity_name || r.entity_id }))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
+  const colorMap = new Map();
+  partyList.forEach((p, idx) => colorMap.set(p.id, PARTY_COLORS[idx % PARTY_COLORS.length]));
+
+  const categoryOrder = [
+    { key: "economy", label: "経済・財政" },
+    { key: "welfare", label: "社会保障・子育て" },
+    { key: "security", label: "外交・安全保障" },
+    { key: "rights", label: "人権・多様性" },
+    { key: "digital", label: "デジタル・行政改革" },
+    { key: "other", label: "その他" },
+  ];
+
+  const topicsForMapping = getActiveTopicsForMapping();
+  const topicsByCategory = new Map(categoryOrder.map((c) => [c.key, []]));
+  topicsForMapping.forEach((t) => {
+    const cat = categorizeTopicForRadar(t.topic_id, t.name);
+    const list = topicsByCategory.get(cat.key) || [];
+    list.push({ topic_id: t.topic_id, name: t.name || t.topic_id });
+    topicsByCategory.set(cat.key, list);
+  });
+  categoryOrder.forEach((c) => {
+    const list = topicsByCategory.get(c.key) || [];
+    list.sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
+    topicsByCategory.set(c.key, list);
+  });
+
+  const initialPartyId = partyList[0]?.id || "";
+  const initialRadar = items.find((x) => x.entity_id === initialPartyId) || items[0];
+  const initialColor = colorMap.get(initialRadar?.entity_id) || "#57d1a3";
+
+  const main = `
+    <div class="radar-main">
+      <div class="radar-main__head">
+        <div>
+          <div class="rubric-meta">選択した政党のレーダー</div>
+          <div class="muted">中心:-100（抑制/消極） / 外側:+100（推進/積極）</div>
+        </div>
+        <label class="radar-main__select">
+          政党
+          <select id="radarMainPartySelect">
+            ${partyList
+              .map(
+                (p) =>
+                  `<option value="${escapeAttr(p.id)}" ${
+                    p.id === initialPartyId ? "selected" : ""
+                  }>${escapeAttr(p.name)}</option>`
+              )
+              .join("")}
+          </select>
+        </label>
+      </div>
+      <div class="radar-main__chart" id="radarMainChart">
+        ${renderRadarSvg(initialRadar, initialColor, { size: 420, showAxisLabels: true, showScaleLabels: true })}
+      </div>
+      <div id="radarMainLegend">${renderRadarLegend(initialColor)}</div>
+    </div>
+  `;
+
+  const intro = `
+      <div class="radar-card radar-card--intro">
+        <div class="radar-card__head">
+          <div class="radar-card__title">レーダーチャートの見方</div>
+          <div class="radar-card__meta muted">多角形＝各大項目の中央値</div>
+        </div>
+      <div class="radar-intro">
+        <div class="radar-intro__text">
+          <div class="muted">中心が「-100（より抑制/消極）」、外側が「+100（より推進/積極）」です。数値の詳細は各カードの「詳細」から確認できます。</div>
+          <div class="radar-intro__axes">
+            <div class="radar-intro__axes-title muted">大項目（軸）</div>
+            <div class="radar-intro__axes-list">${
+              categoryOrder
+                .map((c) => {
+                  const topics = topicsByCategory.get(c.key) || [];
+                  const full = topics.map((t) => `${t.name} (${t.topic_id})`).join("\\n");
+                  const previewItems = topics.slice(0, 6).map((t) => t.name);
+                  const preview =
+                    topics.length <= 6
+                      ? previewItems.join(" / ")
+                      : `${previewItems.join(" / ")} / …他${topics.length - 6}件`;
+                  const tooltip = topics.length ? preview : "該当トピックなし";
+                  return `<span class="chip radar-axis-chip" data-tooltip="${escapeAttr(tooltip)}" title="${escapeAttr(full || tooltip)}">${escapeAttr(c.label)}</span>`;
+                })
+                .join("")
+            }</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const cards = partyList
+    .map((p) => {
+      const radar = items.find((x) => x.entity_id === p.id);
+      if (!radar) return "";
+      const color = colorMap.get(p.id) || "#57d1a3";
+      return `
+        <div class="radar-card" data-entity="${escapeAttr(p.id)}">
+          <div class="radar-card__head">
+            <div class="radar-card__title">${escapeAttr(p.name)}</div>
+            <div class="radar-card__meta muted">${Number(radar.topic_included || 0)}/${Number(radar.topic_total || 0)}</div>
+          </div>
+          <div class="radar-card__chart">
+            ${renderRadarSvg(radar, color, { size: 200 })}
+          </div>
+          <div class="radar-card__actions">
+            <button class="button-link radar-card__button" data-entity="${escapeAttr(p.id)}">詳細</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="radar-gallery">
+      ${main}
+      ${intro}
+      ${cards}
+    </div>
+  `;
+}
+
 async function openDetail(entityId, topicId, mode, scope) {
   try {
     overlayEl.classList.remove("hidden");
@@ -498,6 +1056,14 @@ async function openDetail(entityId, topicId, mode, scope) {
       }
     }
     renderDetail(data);
+    try {
+      const radar = await getRadar(entityId, scopeNorm);
+      const radarEl = document.getElementById("radarSummary");
+      if (radarEl) radarEl.innerHTML = renderRadarSummary(radar);
+    } catch (e) {
+      const radarEl = document.getElementById("radarSummary");
+      if (radarEl) radarEl.innerHTML = `<div class="muted">大項目サマリの取得に失敗しました: ${escapeAttr(e.message || String(e))}</div>`;
+    }
   } catch (err) {
     detailContentEl.innerHTML = `<p class="muted">取得に失敗しました: ${err.message}</p>`;
   }
@@ -518,6 +1084,73 @@ async function loadPositions() {
   const entity = entitySelect.value;
   try {
     modeBadgeEl.textContent = `mode: ${mode}`;
+    if (viewModeSelectEl && viewModeSelectEl.value === "radar") {
+      topicIdEl.textContent = "radar";
+      topicNameEl.textContent = "レーダーチャート";
+      topicDescEl.textContent = "各政党の大項目サマリ（中央値）を多角形で表示します。";
+      const radars = await getAllPartiesRadar("official");
+      positionsEl.innerHTML = renderRadarGallery(radars);
+      updateRubricLink(null);
+
+      const updateRadarMain = (entityId) => {
+        const radar = radars.find((r) => r.entity_id === entityId);
+        if (!radar) return;
+        const partyList = radars
+          .map((r) => ({ id: r.entity_id, name: r.entity_name || r.entity_id }))
+          .sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
+        const idx = partyList.findIndex((p) => p.id === entityId);
+        const color = PARTY_COLORS[(idx >= 0 ? idx : 0) % PARTY_COLORS.length];
+        const chartEl = document.getElementById("radarMainChart");
+        if (chartEl) {
+          chartEl.innerHTML = renderRadarSvg(radar, color, { size: 420, showAxisLabels: true, showScaleLabels: true });
+        }
+        const legendEl = document.getElementById("radarMainLegend");
+        if (legendEl) legendEl.innerHTML = renderRadarLegend(color);
+      };
+
+      const selectEl = document.getElementById("radarMainPartySelect");
+      if (selectEl) {
+        selectEl.addEventListener("change", () => {
+          updateRadarMain(selectEl.value);
+        });
+      }
+
+      positionsEl.querySelectorAll(".radar-card[data-entity]").forEach((card) => {
+        card.addEventListener("click", (e) => {
+          const btn = e.target?.closest?.("button");
+          if (btn) return;
+          const id = card.dataset.entity;
+          if (!id) return;
+          if (selectEl) selectEl.value = id;
+          updateRadarMain(id);
+        });
+      });
+
+      positionsEl.querySelectorAll("button.radar-card__button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const entityId = btn.dataset.entity;
+          const radar = radars.find((r) => r.entity_id === entityId);
+          if (!radar) return;
+          const partyList = radars
+            .map((r) => ({ id: r.entity_id, name: r.entity_name || r.entity_id }))
+            .sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
+          const idx = partyList.findIndex((p) => p.id === entityId);
+          const color = PARTY_COLORS[(idx >= 0 ? idx : 0) % PARTY_COLORS.length];
+          detailContentEl.innerHTML = `
+            <p class="eyebrow">レーダーチャート</p>
+            <h3>${escapeAttr(radar.entity_name || radar.entity_id)}</h3>
+            <p class="muted">中心:-100（抑制/消極） / 外側:+100（推進/積極）</p>
+            <div class="radar-detail__chart">
+              ${renderRadarSvg(radar, color, { size: 320, showAxisLabels: true, showScaleLabels: true })}
+            </div>
+            ${renderRadarLegend(color)}
+            ${renderRadarSummary(radar)}
+          `;
+          overlayEl.classList.remove("hidden");
+        });
+      });
+      return;
+    }
     if (viewModeSelectEl && viewModeSelectEl.value === "axis2") {
       const topicX = topicSelectXEl?.value;
       const topicY = topicSelectYEl?.value;
@@ -603,8 +1236,24 @@ function openAxisDetail(entityId, xData, yData) {
       ${yQuote ? `<div class="rubric-meta" style="margin-top:6px;"><code>${escapeAttr(yQuote)}</code></div>` : ""}
       ${yUrl ? `<div class="rubric-meta"><a class="link" target="_blank" rel="noreferrer" href="${escapeAttr(yUrl)}">${escapeAttr(yUrl)}</a></div>` : ""}
     </div>
+    <div id="radarSummary" class="radar-summary">
+      <div class="radar-summary__head">
+        <h4>大項目サマリ（中央値＋ブレ幅）</h4>
+        <div class="muted">スコアなしは除外</div>
+      </div>
+      <div class="muted">読み込み中...</div>
+    </div>
   `;
   overlayEl.classList.remove("hidden");
+  getRadar(entityId, "official")
+    .then((radar) => {
+      const radarEl = document.getElementById("radarSummary");
+      if (radarEl) radarEl.innerHTML = renderRadarSummary(radar);
+    })
+    .catch((e) => {
+      const radarEl = document.getElementById("radarSummary");
+      if (radarEl) radarEl.innerHTML = `<div class="muted">大項目サマリの取得に失敗しました: ${escapeAttr(e.message || String(e))}</div>`;
+    });
 }
 
 modeSelect.addEventListener("change", loadPositions);
@@ -616,9 +1265,11 @@ if (themeSelectEl) {
 }
 if (viewModeSelectEl) {
   viewModeSelectEl.addEventListener("change", () => {
-    const isAxis = viewModeSelectEl.value === "axis2";
+    const mode = viewModeSelectEl.value;
+    const isAxis = mode === "axis2";
+    const isRadar = mode === "radar";
     if (axisTopicSelectorsEl) axisTopicSelectorsEl.classList.toggle("hidden", !isAxis);
-    if (topicSelectEl) topicSelectEl.classList.toggle("hidden", isAxis);
+    if (topicSelectEl) topicSelectEl.classList.toggle("hidden", isAxis || isRadar);
     updateSelectedTopicMeta(selectedTopicId);
     loadPositions();
   });
