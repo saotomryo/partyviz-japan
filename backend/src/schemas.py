@@ -242,6 +242,34 @@ class TopicDetailResponse(BaseModel):
     score: ScoreItem
 
 
+class RadarTopicContribution(BaseModel):
+    topic_id: str
+    topic_name: str
+    stance_score: int = Field(..., ge=-100, le=100)
+    stance_label: str
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class RadarCategoryResult(BaseModel):
+    key: str
+    label: str
+    count: int = Field(..., ge=0)
+    median: Optional[float] = Field(default=None, ge=-100, le=100)
+    min: Optional[int] = Field(default=None, ge=-100, le=100)
+    max: Optional[int] = Field(default=None, ge=-100, le=100)
+    topics: List[RadarTopicContribution] = Field(default_factory=list)
+
+
+class PartyRadarResponse(BaseModel):
+    entity_type: Literal["party"] = "party"
+    entity_id: str
+    entity_name: Optional[str] = None
+    scope: Literal["official", "mixed"]
+    topic_total: int = Field(..., ge=0)
+    topic_included: int = Field(..., ge=0)
+    categories: List[RadarCategoryResult]
+
+
 class AdminJobResponse(BaseModel):
     status: str = "queued"
     detail: str
