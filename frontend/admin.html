@@ -192,6 +192,23 @@
 
       <div class="divider"></div>
 
+      <h3 style="margin:0 0 8px;">政党要旨（相対評価）</h3>
+      <p class="small">最新スコアから政党要旨を再生成します（公開UIの要旨表示に反映）。</p>
+      <div class="row">
+        <label>scope
+          <select id="summaryScope">
+            <option value="official">official</option>
+            <option value="mixed">mixed</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="button-link" id="runSummary">要旨を再生成</button>
+      </div>
+      <div id="summaryResult" style="margin-top:10px;"></div>
+
+      <div class="divider"></div>
+
       <h3 style="margin:0 0 8px;">公開用スナップショット（静的ホスティング）</h3>
       <p class="small">バックエンドを公開せず、公開UIが参照する <code>snapshot.json</code> をダウンロードします。</p>
       <div class="row" style="margin-top:10px;">

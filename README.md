@@ -124,6 +124,11 @@ python -m http.server 5173
 5. 「スコアリング実行」を押す（根拠URL抽出→取得→相対スコア算出→DB保存）
 6. 「最新スコア表示」で最新結果を確認
 
+**G. 政党要旨（相対評価）の再生成**
+1. `scope` を選択（official/mixed）
+2. 「要旨を再生成」を押す
+3. 公開UIの「政党要旨（相対評価）」に反映されます
+
 **G. スナップショット出力（静的公開用）**
 1. 管理UIの「スナップショットをダウンロード」を押す
 2. 出力された `snapshot.json` を `frontend/data/snapshot.json` に配置
@@ -133,6 +138,7 @@ python -m http.server 5173
 ![メインUI](JPG/mainUI.jpg) 
 ![メインUI](JPG/mainUI2.jpg)
 ![メインUI](JPG/mainUI3.jpg)
+![メインUI](JPG/mainUI3-2.jpg)
 ![メインUI](JPG/mainUI4.jpg)
 ![メインUI](JPG/mainUI5.jpg)
 ![メインUI](JPG/mainUI6.jpg)
@@ -198,6 +204,7 @@ alembic upgrade head
 - スコアリング実行（根拠URL抽出→取得→相対スコア算出→DB保存）: `POST /admin/topics/{topic_id}/scores/run`
 - 最新スコア取得: `GET /admin/topics/{topic_id}/scores/latest`
 - ルーブリック取得（公開）: `GET /topics/{topic_id}/rubric`
+- 政党要旨一覧（公開）: `GET /summaries/parties?scope=official|mixed`
 
 ## トラブルシュート
 - `401 Invalid API key`: `.env` の `ADMIN_API_KEY` と、管理UIの `X-API-Key` が一致しているか確認
