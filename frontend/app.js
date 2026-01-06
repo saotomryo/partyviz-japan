@@ -27,6 +27,7 @@ let dataSource = "api";
 let snapshotUrlUsed = DEFAULT_SNAPSHOT_URL;
 let topicsCache = [];
 let themeName = "midnight";
+const summaryCache = new Map();
 
 function getQueryParam(key) {
   const url = new URL(window.location.href);
@@ -326,6 +327,178 @@ async function getAllPartiesRadar(scope) {
       categories,
     };
   });
+}
+
+function buildSummaryText({
+  posTopics,
+  negTopics,
+  nearParty,
+  farParty,
+  quote,
+  topicCount,
+  fiscalNote,
+}) {
+  const posPart = posTopics.slice(0, 2).join("・");
+  const negPart = negTopics.slice(0, 1).join("・");
+  const phrases = [];
+  if (posPart) phrases.push(`${posPart}に積極的`);
+  if (negPart) phrases.push(`${negPart}は慎重`);
+  const lead = phrases.length ? `平均より${phrases.join("、")}。` : "平均との差が小さい。";
+  let comp = "";
+  if (nearParty && farParty) comp = `${nearParty}に近く、${farParty}とは差が大きい。`;
+  else if (nearParty) comp = `${nearParty}に近い傾向。`;
+  const extra = topicCount ? `対象${topicCount}件の相対評価。` : "";
+  const note = fiscalNote ? fiscalNote : "";
+  const q = quote ? `根拠:「${quote}」` : "";
+  let text = `${lead}${comp}${extra}${note}${q}`;
+  return text;
+}
+
+function cleanQuote(text) {
+  const t = String(text || "").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+  return t;
+}
+
+async function getPartySummaries(scope) {
+  const scopeNorm = (scope || "official").toLowerCase();
+  const cacheKey = `summaries:${scopeNorm}`;
+  if (summaryCache.has(cacheKey)) return summaryCache.get(cacheKey);
+
+  if (dataSource !== "snapshot") {
+    const data = await fetchJSON(`${getApiBase()}/summaries/parties?scope=${encodeURIComponent(scopeNorm)}`);
+    summaryCache.set(cacheKey, data);
+    return data;
+  }
+
+  const topics = (snapshotData?.topics || []).filter((t) => t?.is_active !== false);
+  const topicById = new Map(topics.map((t) => [t.topic_id, t]));
+
+  const partyById = new Map();
+  topics.forEach((t) => {
+    const p = snapshotData.positions?.[t.topic_id];
+    p?.scores?.forEach((s) => {
+      if (!partyById.has(s.entity_id)) {
+        partyById.set(s.entity_id, { entity_id: s.entity_id, entity_name: s.entity_name || s.entity_id });
+      }
+    });
+  });
+
+  const topicScores = new Map();
+  const partyScores = new Map();
+  const partyQuotes = new Map();
+
+  topics.forEach((t) => {
+    const p = snapshotData.positions?.[t.topic_id];
+    if (!p?.scores?.length) return;
+    p.scores.forEach((s) => {
+      if (isMissingScoreItemForRadar(s)) return;
+      if (!partyScores.has(s.entity_id)) partyScores.set(s.entity_id, new Map());
+      partyScores.get(s.entity_id).set(t.topic_id, Number(s.stance_score || 0));
+      if (!topicScores.has(t.topic_id)) topicScores.set(t.topic_id, []);
+      topicScores.get(t.topic_id).push(Number(s.stance_score || 0));
+      const quote = s?.evidence?.[0]?.quote ? cleanQuote(s.evidence[0].quote) : "";
+      if (quote) {
+        if (!partyQuotes.has(s.entity_id)) partyQuotes.set(s.entity_id, new Map());
+        partyQuotes.get(s.entity_id).set(t.topic_id, quote);
+      }
+    });
+  });
+
+  const topicStats = new Map();
+  topicScores.forEach((vals, tid) => {
+    if (!vals.length) return;
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, vals.length);
+    const std = Math.sqrt(variance);
+    topicStats.set(tid, { mean, std });
+  });
+
+  const partyZ = new Map();
+  partyScores.forEach((scores, pid) => {
+    const zmap = new Map();
+    scores.forEach((val, tid) => {
+      const stat = topicStats.get(tid);
+      if (!stat) return;
+      const z = stat.std === 0 ? 0 : (val - stat.mean) / stat.std;
+      zmap.set(tid, z);
+    });
+    partyZ.set(pid, zmap);
+  });
+
+  const distance = (a, b) => {
+    const keys = Array.from(a.keys()).filter((k) => b.has(k));
+    if (keys.length < 2) return null;
+    const vals = keys.map((k) => (a.get(k) - b.get(k)) ** 2);
+    return vals.reduce((x, y) => x + y, 0) / vals.length;
+  };
+
+  const summaries = Array.from(partyById.values()).map((party) => {
+    const zmap = partyZ.get(party.entity_id) || new Map();
+    const zItems = Array.from(zmap.entries()).sort((a, b) => b[1] - a[1]);
+    const posIds = zItems.slice(0, 3).map((x) => x[0]);
+    const negIds = Array.from(zmap.entries()).sort((a, b) => a[1] - b[1]).slice(0, 2).map((x) => x[0]);
+    const posTopics = posIds.map((tid) => topicById.get(tid)?.name).filter(Boolean);
+    const negTopics = negIds.map((tid) => topicById.get(tid)?.name).filter(Boolean);
+
+    let fiscalNote = null;
+    const fiscalTid = posIds.concat(negIds).find((tid) => {
+      const name = topicById.get(tid)?.name || "";
+      return ["財政", "財政規律", "財政再建", "積極財政"].some((k) => name.includes(k));
+    });
+    if (fiscalTid) {
+      const z = zmap.get(fiscalTid);
+      if (typeof z === "number") {
+        if (z < 0) fiscalNote = "※財政はマイナス側=積極財政寄り。";
+        else if (z > 0) fiscalNote = "※財政はプラス側=規律重視寄り。";
+      }
+    }
+
+    const dists = [];
+    partyZ.forEach((other, pid) => {
+      if (pid === party.entity_id) return;
+      const d = distance(zmap, other);
+      if (d === null) return;
+      dists.push([d, pid]);
+    });
+    dists.sort((a, b) => a[0] - b[0]);
+    const nearParty = dists.length ? partyById.get(dists[0][1])?.entity_name : null;
+    const farParty = dists.length ? partyById.get(dists[dists.length - 1][1])?.entity_name : null;
+
+    let quote = "";
+    for (const tid of posIds.concat(negIds)) {
+      const q = partyQuotes.get(party.entity_id)?.get(tid);
+      if (q) {
+        quote = q;
+        break;
+      }
+    }
+
+    const topicCount = partyScores.get(party.entity_id)?.size || 0;
+    const summaryText = buildSummaryText({
+      posTopics,
+      negTopics,
+      nearParty,
+      farParty,
+      quote,
+      topicCount,
+      fiscalNote,
+    });
+
+    return {
+      entity_id: party.entity_id,
+      entity_name: party.entity_name,
+      scope: scopeNorm,
+      summary_text: summaryText,
+      positive_topics: posTopics,
+      negative_topics: negTopics,
+      near_party: nearParty,
+      far_party: farParty,
+      evidence_quote: quote || null,
+    };
+  });
+
+  summaryCache.set(cacheKey, summaries);
+  return summaries;
 }
 
 function stanceColorClass(label) {
@@ -634,6 +807,10 @@ function renderDetail(data) {
     <h3>${data.topic.name}</h3>
     <p class="muted">${s.entity_name || s.entity_id}</p>
     <p class="muted">${data.topic.description || ""}</p>
+    <div id="partySummary" class="summary-card">
+      <div class="summary-card__head">政党要旨（相対評価）</div>
+      <div class="muted">要旨を読み込み中...</div>
+    </div>
     ${axisInfo}
     <div style="margin: 10px 0;">
       <span class="${stanceColorClass(s.stance_label)}">${s.stance_label}</span>
@@ -974,6 +1151,9 @@ function renderRadarGallery(radars) {
       <div class="radar-main__chart" id="radarMainChart">
         ${renderRadarSvg(initialRadar, initialColor, { size: 420, showAxisLabels: true, showScaleLabels: true })}
       </div>
+      <div class="radar-main__summary" id="radarMainSummary">
+        <div class="muted">要旨を読み込み中...</div>
+      </div>
       <div id="radarMainLegend">${renderRadarLegend(initialColor)}</div>
     </div>
   `;
@@ -1057,6 +1237,21 @@ async function openDetail(entityId, topicId, mode, scope) {
     }
     renderDetail(data);
     try {
+      const summaries = await getPartySummaries(scopeNorm);
+      const summary = summaries.find((s) => s.entity_id === entityId);
+      const summaryEl = document.getElementById("partySummary");
+      if (summaryEl) {
+        summaryEl.innerHTML = summary
+          ? `<div class="summary-card__head">政党要旨（相対評価）</div><div class="summary-card__text">${escapeAttr(summary.summary_text)}</div>`
+          : `<div class="summary-card__head">政党要旨（相対評価）</div><div class="muted">要旨がありません。</div>`;
+      }
+    } catch {
+      const summaryEl = document.getElementById("partySummary");
+      if (summaryEl) {
+        summaryEl.innerHTML = `<div class="summary-card__head">政党要旨（相対評価）</div><div class="muted">要旨の取得に失敗しました。</div>`;
+      }
+    }
+    try {
       const radar = await getRadar(entityId, scopeNorm);
       const radarEl = document.getElementById("radarSummary");
       if (radarEl) radarEl.innerHTML = renderRadarSummary(radar);
@@ -1106,6 +1301,19 @@ async function loadPositions() {
         }
         const legendEl = document.getElementById("radarMainLegend");
         if (legendEl) legendEl.innerHTML = renderRadarLegend(color);
+        const summaryEl = document.getElementById("radarMainSummary");
+        if (summaryEl) {
+          getPartySummaries("official")
+            .then((summaries) => {
+              const s = summaries.find((x) => x.entity_id === entityId);
+              summaryEl.innerHTML = s
+                ? `<div class="summary-card__text">${escapeAttr(s.summary_text)}</div>`
+                : `<div class="muted">要旨がありません。</div>`;
+            })
+            .catch(() => {
+              summaryEl.innerHTML = `<div class="muted">要旨の取得に失敗しました。</div>`;
+            });
+        }
       };
 
       const selectEl = document.getElementById("radarMainPartySelect");
@@ -1113,6 +1321,7 @@ async function loadPositions() {
         selectEl.addEventListener("change", () => {
           updateRadarMain(selectEl.value);
         });
+        updateRadarMain(selectEl.value);
       }
 
       positionsEl.querySelectorAll(".radar-card[data-entity]").forEach((card) => {

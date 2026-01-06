@@ -36,6 +36,9 @@ const loadLatestScoresBtn = document.getElementById("loadLatestScores");
 const scoreResultEl = document.getElementById("scoreResult");
 const scorePartyCountEl = document.getElementById("scorePartyCount");
 const downloadSnapshotBtn = document.getElementById("downloadSnapshot");
+const summaryScopeEl = document.getElementById("summaryScope");
+const runSummaryBtn = document.getElementById("runSummary");
+const summaryResultEl = document.getElementById("summaryResult");
 
 const openaiSearchModelEl = document.getElementById("openaiSearchModel");
 const geminiSearchModelEl = document.getElementById("geminiSearchModel");
@@ -139,6 +142,34 @@ async function downloadSnapshot() {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+async function runPartySummaries() {
+  const scope = (summaryScopeEl?.value || "official").trim();
+  summaryResultEl.innerHTML = `<p class="muted">要旨を生成中...</p>`;
+  try {
+    const data = await request(`/summaries/parties?scope=${encodeURIComponent(scope)}`);
+    if (!Array.isArray(data) || data.length === 0) {
+      summaryResultEl.innerHTML = `<p class="muted">要旨データがありません。</p>`;
+      return;
+    }
+    const rows = data
+      .map(
+        (item) => `
+        <div class="score-card">
+          <div>
+            <h4 class="score-card__title">${escapeHtml(item.entity_name || item.entity_id)}</h4>
+            <p class="muted">${escapeHtml(item.summary_text || "")}</p>
+          </div>
+          <div class="score-card__meta">scope: ${escapeHtml(item.scope || "")}</div>
+        </div>
+      `
+      )
+      .join("");
+    summaryResultEl.innerHTML = rows;
+  } catch (e) {
+    summaryResultEl.innerHTML = `<p class="muted">要旨生成に失敗: ${e.message}</p>`;
+  }
 }
 
 function pillClass(status) {
@@ -717,6 +748,7 @@ loadLatestScoresBtn.addEventListener("click", loadLatestScores);
 downloadSnapshotBtn?.addEventListener("click", () =>
   downloadSnapshot().catch((e) => alert(`ダウンロード失敗: ${e.message}`))
 );
+runSummaryBtn?.addEventListener("click", () => runPartySummaries());
 
 // init
 apiBaseEl.value = getApiBase();

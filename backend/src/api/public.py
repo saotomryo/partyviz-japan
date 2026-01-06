@@ -10,6 +10,7 @@ from ..db import models
 from ..schemas import (
     Evidence,
     PartyRadarResponse,
+    PartySummaryResponse,
     ScoreItem,
     ScoreMeta,
     Topic,
@@ -19,6 +20,7 @@ from ..schemas import (
     TopicsResponse,
 )
 from ..services import public_data
+from ..services import party_summary as party_summary_service
 from ..services import radar as radar_service
 
 
@@ -334,3 +336,12 @@ def list_parties_radar(
         include_topics=bool(int(include_topics)),
     )
     return [PartyRadarResponse.model_validate(p) for p in payloads]
+
+
+@router.get("/summaries/parties", response_model=list[PartySummaryResponse])
+def list_party_summaries(
+    scope: str = Query("official", pattern="^(official|mixed)$"),
+    db: Session = Depends(get_db),
+) -> list[PartySummaryResponse]:
+    payloads = party_summary_service.build_party_summaries(db, scope=scope)
+    return [PartySummaryResponse.model_validate(p) for p in payloads]

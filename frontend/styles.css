@@ -739,6 +739,42 @@ body.theme-sunny .radar-main {
   overflow: visible;
 }
 
+.radar-main__summary {
+  margin: 8px 0 6px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.summary-card {
+  margin: 10px 0 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(15, 20, 44, 0.45);
+  overflow: visible;
+}
+
+body.theme-dawn .summary-card,
+body.theme-sunny .summary-card {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.summary-card__head {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.summary-card__text {
+  line-height: 1.6;
+  font-size: 14px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .radar-card {
   background: rgba(15, 20, 44, 0.55);
   border: 1px solid var(--border);

@@ -270,6 +270,18 @@ class PartyRadarResponse(BaseModel):
     categories: List[RadarCategoryResult]
 
 
+class PartySummaryResponse(BaseModel):
+    entity_id: str
+    entity_name: str
+    scope: Literal["official", "mixed"]
+    summary_text: str
+    positive_topics: List[str] = Field(default_factory=list)
+    negative_topics: List[str] = Field(default_factory=list)
+    near_party: Optional[str] = None
+    far_party: Optional[str] = None
+    evidence_quote: Optional[str] = None
+
+
 class AdminJobResponse(BaseModel):
     status: str = "queued"
     detail: str

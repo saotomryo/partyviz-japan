@@ -22,7 +22,7 @@ class RadarTopicPoint:
     confidence: float
 
 
-def _is_missing_score(score_row: models.TopicScore) -> bool:
+def is_missing_score(score_row: models.TopicScore) -> bool:
     """Exclude clearly synthetic / missing score rows.
 
     Note: genuine "not_mentioned" can still be a valid score if evidence/confidence exists.
@@ -89,7 +89,7 @@ def build_party_radar(
         score_row = score_by_topic_id.get(topic_id)
         if not score_row:
             continue
-        if _is_missing_score(score_row):
+        if is_missing_score(score_row):
             continue
 
         topic = topic_by_id.get(topic_id)
@@ -190,7 +190,7 @@ def build_all_party_radars(
             topic = topic_by_id.get(topic_id)
             topic_name = topic.name if topic else topic_id
 
-            if _is_missing_score(row):
+            if is_missing_score(row):
                 continue
 
             category = categorize_topic(topic_id=topic_id, topic_name=topic_name)
