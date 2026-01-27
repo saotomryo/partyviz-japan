@@ -200,11 +200,38 @@ alembic upgrade head
 - ルーブリック有効化（同topicのactiveはarchivedへ）: `POST /admin/rubrics/{rubric_id}/activate`
 - 政党レジストリ自動取得（LLM検索→DBへupsert）: `POST /admin/parties/discover`
 - 政党の個別編集: `PATCH /admin/parties/{party_id}`（管理UIで一覧から選択→編集）
-- 開発用データ削除（危険、`confirm=DELETE` 必須、`ADMIN_API_KEY` 必須）: `POST /admin/dev/purge`
+- 開発用データ削除（危険、`confirm=DELETE` 必須、`ADMIN_API_KEY` 必須）: `POST /admin/dev/purge`（`targets`: `parties|topics|events|policy|scores|all`）
 - スコアリング実行（根拠URL抽出→取得→相対スコア算出→DB保存）: `POST /admin/topics/{topic_id}/scores/run`
 - 最新スコア取得: `GET /admin/topics/{topic_id}/scores/latest`
 - ルーブリック取得（公開）: `GET /topics/{topic_id}/rubric`
 - 政党要旨一覧（公開）: `GET /summaries/parties?scope=official|mixed`
+
+## データ更新（選挙で政策が変わったとき）
+
+「前回の政策/スコアを消して、最新の内容で取り込み直す」運用を想定しています。
+
+### 1) DBバックアップ（推奨）
+
+```bash
+cd backend
+python scripts/export_db_backup.py --out backups/backup_$(date +%Y%m%d_%H%M%S).json
+```
+
+※ `source_snapshots` のバイナリ（`content`）も含めたい場合は `--include-binary-snapshots` を付けてください（ファイルが大きくなります）。
+復元が必要な場合は以下（既存データを消してから戻す場合は `--replace`）:
+
+```bash
+cd backend
+python scripts/import_db_backup.py --in backups/<backup_file>.json --replace
+```
+
+### 2) 政策/スコアだけ削除（トピックや政党レジストリは残す）
+
+`POST /admin/dev/purge` に `targets=["policy","scores"]` を指定します。
+
+### 3) 再クロール → 再スコアリング
+
+管理UIで「政策URLをクロール」→「スコアリング実行」を再度行います。
 
 ## トラブルシュート
 - `401 Invalid API key`: `.env` の `ADMIN_API_KEY` と、管理UIの `X-API-Key` が一致しているか確認

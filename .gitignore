@@ -31,3 +31,6 @@ frontend/.vite/
 
 # Agent artifacts
 backend/runs/
+
+# Local backups (do not commit)
+backend/backups/

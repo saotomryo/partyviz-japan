@@ -168,7 +168,9 @@ class PartyRegistryDiscoverResponse(BaseModel):
 
 
 class AdminPurgeRequest(BaseModel):
-    targets: List[Literal["parties", "topics", "events", "all"]] = Field(default_factory=lambda: ["all"])
+    targets: List[Literal["parties", "topics", "events", "policy", "scores", "all"]] = Field(
+        default_factory=lambda: ["all"]
+    )
     confirm: str
     dry_run: bool = False
 

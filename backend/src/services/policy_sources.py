@@ -13,6 +13,8 @@ def _normalize_url(url: str) -> str:
     u = (url or "").strip()
     if not u:
         return ""
+    # Common copy/paste artifacts from JSON/HTML attributes
+    u = u.strip().strip('\'"')
     if u.endswith("/"):
         return u
     return u + "/"
@@ -45,7 +47,10 @@ def replace_sources(db: Session, party_id, base_urls: Iterable[str]) -> list[mod
 
     allowed_domains = list(party.allowed_domains or [])
     if party.official_home_url:
-        allowed_domains.append(urlparse(party.official_home_url).netloc)
+        try:
+            allowed_domains.append(urlparse(party.official_home_url).netloc)
+        except ValueError:
+            pass
 
     normalized: list[str] = []
     seen: set[str] = set()
@@ -53,7 +58,10 @@ def replace_sources(db: Session, party_id, base_urls: Iterable[str]) -> list[mod
         url = _normalize_url(str(u or ""))
         if not url or url in seen:
             continue
-        pu = urlparse(url)
+        try:
+            pu = urlparse(url)
+        except ValueError:
+            continue
         if pu.scheme not in {"http", "https"}:
             continue
         if not _domain_allowed(pu.netloc, allowed_domains):
@@ -66,4 +74,3 @@ def replace_sources(db: Session, party_id, base_urls: Iterable[str]) -> list[mod
         db.add(models.PartyPolicySource(party_id=party_id, base_url=url, status="active"))
     db.commit()
     return list_sources(db, party_id)
-

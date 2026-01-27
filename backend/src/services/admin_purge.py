@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
-Target = Literal["parties", "topics", "events", "all"]
+Target = Literal["parties", "topics", "events", "policy", "scores", "all"]
 
 
 @dataclass(frozen=True)
@@ -18,9 +18,27 @@ class PurgeResult:
 def purge(db: Session, *, targets: Iterable[Target], dry_run: bool = False) -> PurgeResult:
     normalized = set(targets)
     if "all" in normalized:
-        normalized = {"parties", "topics", "events"}
+        normalized = {"parties", "topics", "events", "policy", "scores"}
 
     statements: list[tuple[str, str]] = []
+
+    # scores only
+    if "scores" in normalized:
+        statements.extend(
+            [
+                ("topic_scores", "DELETE FROM topic_scores"),
+                ("score_runs", "DELETE FROM score_runs"),
+            ]
+        )
+
+    # policy index only
+    if "policy" in normalized:
+        statements.extend(
+            [
+                ("policy_chunks", "DELETE FROM policy_chunks"),
+                ("policy_documents", "DELETE FROM policy_documents"),
+            ]
+        )
 
     # topics/topic_rubrics
     if "topics" in normalized:

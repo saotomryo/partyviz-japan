@@ -65,6 +65,7 @@ const partyDiscoverLimitEl = document.getElementById("partyDiscoverLimit");
 const discoverPartiesBtn = document.getElementById("discoverParties");
 const purgePartiesBtn = document.getElementById("purgeParties");
 const purgeTopicsBtn = document.getElementById("purgeTopics");
+const purgePolicyScoresBtn = document.getElementById("purgePolicyScores");
 const purgeAllBtn = document.getElementById("purgeAll");
 
 let selectedTopic = null;
@@ -505,6 +506,14 @@ async function runScoring() {
   }
   scoreResultEl.innerHTML = `<p class="muted">実行中...</p>`;
   try {
+    const MAX_EVIDENCE_PER_PARTY = 5;
+    let maxEvidence = Number(scoreMaxEvidenceEl.value || 2);
+    if (!Number.isFinite(maxEvidence)) maxEvidence = 2;
+    const clampedEvidence = Math.max(1, Math.min(MAX_EVIDENCE_PER_PARTY, Math.trunc(maxEvidence)));
+    if (clampedEvidence !== maxEvidence) {
+      scoreMaxEvidenceEl.value = String(clampedEvidence);
+      alert(`max_evidence_per_party は 1〜${MAX_EVIDENCE_PER_PARTY} の範囲です（${clampedEvidence} に丸めました）`);
+    }
     const body = {
       topic_text: selectedTopic.name,
       search_provider: (searchProviderEl.value || "auto").trim(),
@@ -513,7 +522,7 @@ async function runScoring() {
       search_gemini_model: (geminiSearchModelEl.value || "").trim() || null,
       score_openai_model: (openaiRubricModelEl.value || "").trim() || null,
       score_gemini_model: (geminiRubricModelEl.value || "").trim() || null,
-      max_evidence_per_party: Number(scoreMaxEvidenceEl.value || 2),
+      max_evidence_per_party: clampedEvidence,
       include_external: Boolean(scoreIncludeExternalEl && scoreIncludeExternalEl.checked),
       index_only: Boolean(scoreIndexOnlyEl && scoreIndexOnlyEl.checked),
     };
@@ -735,13 +744,16 @@ crawlPolicySourcesBtn?.addEventListener("click", async () => {
     const resp = await request(`/admin/parties/${encodeURIComponent(selectedParty.party_id)}/policy-sources/crawl`, {
       method: "POST",
     });
-    alert(`クロール完了: html=${resp.stats?.fetched_html ?? 0}, pdf=${resp.stats?.fetched_pdf ?? 0}, skipped=${resp.stats?.skipped ?? 0}`);
+    alert(
+      `クロール完了: html=${resp.stats?.fetched_html ?? 0}, pdf=${resp.stats?.fetched_pdf ?? 0}, skipped=${resp.stats?.skipped ?? 0}, errors=${resp.stats?.errors ?? 0}`
+    );
   } catch (e) {
     alert(`クロール失敗: ${e.message}`);
   }
 });
 purgePartiesBtn.addEventListener("click", () => purge(["parties", "events"]));
 purgeTopicsBtn.addEventListener("click", () => purge(["topics"]));
+purgePolicyScoresBtn?.addEventListener("click", () => purge(["policy", "scores"]));
 purgeAllBtn.addEventListener("click", () => purge(["all"]));
 runScoringBtn.addEventListener("click", runScoring);
 loadLatestScoresBtn.addEventListener("click", loadLatestScores);

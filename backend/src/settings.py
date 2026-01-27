@@ -30,6 +30,18 @@ class Settings(BaseSettings):
     agent_save_runs: bool = Field(default=False, description="エージェントPoCの入出力をruns/へ保存")
     party_limit: int = Field(default=6, description="PoCで処理する政党数上限（タイムアウト回避）")
     max_evidence_per_party: int = Field(default=2, description="PoCで各党から収集する根拠URL上限")
+    http_user_agent: str = Field(
+        default=(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        description="HTTP取得に使うUser-Agent（403回避のためブラウザ寄りの既定値）",
+    )
+    http_accept_language: str = Field(
+        default="ja,en-US;q=0.8,en;q=0.7",
+        description="HTTP取得に使うAccept-Language",
+    )
 
     model_config = SettingsConfigDict(
         env_file=["../.env", ".env"],

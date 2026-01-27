@@ -1508,6 +1508,15 @@ body.theme-sunny .plot-row {
   transform: translateY(-1px);
 }
 
+.button-link.danger {
+  border-color: rgba(255, 127, 107, 0.5);
+  color: var(--danger);
+}
+
+.button-link.danger:hover {
+  border-color: var(--danger);
+}
+
 .overlay {
   position: fixed;
   inset: 0;

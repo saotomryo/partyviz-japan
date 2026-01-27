@@ -91,11 +91,19 @@ def _normalize_url(url: str) -> str:
     u = (url or "").strip()
     if not u:
         return ""
+    # Common copy/paste artifacts from HTML attributes or JSON strings
+    u = u.strip().strip('\'"')
     if u.startswith("//"):
         return "https:" + u
     if u.startswith("#"):
         return ""
     return u.split("#", 1)[0]
+
+def _safe_urljoin(base: str, href: str) -> str:
+    try:
+        return urljoin(base, href)
+    except ValueError:
+        return ""
 
 
 def _same_domain(url: str, domain: str) -> bool:
@@ -126,7 +134,10 @@ def _path_allowed(url: str, base_path: str) -> bool:
 
 
 def _base_path_from_url(url: str) -> str:
-    path = urlparse(url).path or "/"
+    try:
+        path = urlparse(url).path or "/"
+    except Exception:
+        return "/"
     if path == "/":
         return "/"
     if not path.endswith("/"):
@@ -276,15 +287,27 @@ def crawl_party_policy_sources(
     stats = CrawlStats()
     visited: set[str] = set()
     queue: list[tuple[str, str, str, int]] = []
+    invalid_base_urls: list[str] = []
     for s in sources:
         base_url = _normalize_url(s.base_url)
         if not base_url:
             continue
-        pu = urlparse(base_url)
+        try:
+            pu = urlparse(base_url)
+        except ValueError:
+            invalid_base_urls.append(base_url)
+            continue
         base_path = _base_path_from_url(base_url)
         queue.append((base_url, pu.netloc, base_path, max_depth))
 
     log: dict[str, list[dict]] = {"fetched": [], "skipped": [], "errors": []}
+    for u in invalid_base_urls:
+        stats.skipped += 1
+        log["errors"].append({"url": u, "reason": "invalid_base_url"})
+    if not queue:
+        if invalid_base_urls:
+            raise ValueError(f"no valid policy source urls (invalid: {', '.join(invalid_base_urls[:3])})")
+        raise ValueError("no valid policy source urls")
     run_dir = None
     if settings.agent_save_runs:
         run_dir = ensure_run_dir(Path(__file__).resolve().parents[2] / "runs" / "policy_crawl")
@@ -372,7 +395,20 @@ def crawl_party_policy_sources(
         status = int(getattr(resp, "status_code", 0) or 0)
         if status < 200 or status >= 400:
             stats.skipped += 1
-            log["skipped"].append({"url": url, "reason": f"http_{status}"})
+            entry: dict = {"url": url, "reason": f"http_{status}"}
+            if status in {401, 403, 429}:
+                try:
+                    body = (resp.content or b"")[:8000]
+                    snippet = body.decode(resp.encoding or "utf-8", errors="ignore").strip()
+                    if snippet:
+                        entry["body_snippet"] = snippet[:800]
+                except Exception:
+                    pass
+                for hk in ["server", "via", "cf-ray", "cf-cache-status", "content-type", "location"]:
+                    hv = resp.headers.get(hk)
+                    if hv:
+                        entry[hk] = hv
+            log["skipped"].append(entry)
             continue
 
         content_type = (resp.headers.get("content-type") or "").lower()
@@ -438,7 +474,11 @@ def crawl_party_policy_sources(
                 stats.skipped += 1
                 log["skipped"].append({"url": href, "reason": "skip_non_http"})
                 continue
-            next_url = urljoin(url, href)
+            next_url = _safe_urljoin(url, href)
+            if not next_url:
+                stats.skipped += 1
+                log["skipped"].append({"url": href, "reason": "invalid_url"})
+                continue
             if next_url.lower().endswith((".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")):
                 stats.skipped += 1
                 log["skipped"].append({"url": next_url, "reason": "skip_asset"})
