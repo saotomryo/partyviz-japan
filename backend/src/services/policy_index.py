@@ -41,12 +41,14 @@ def search_policy_chunks(
 
     hits: dict[str, PolicyChunkHit] = {}
     tsv = func.to_tsvector("simple", models.PolicyChunk.content)
+    non_deprecated = func.coalesce(models.PolicyChunk.meta.op("->>")("deprecated"), "false") != "true"
     for q in norm_queries:
         tsq = func.plainto_tsquery("simple", q)
         rank = func.ts_rank_cd(tsv, tsq)
         stmt = (
             select(models.PolicyChunk, rank.label("rank"))
             .where(models.PolicyChunk.party_id == party_id)
+            .where(non_deprecated)
             .where(tsv.op("@@")(tsq))
             .order_by(rank.desc())
             .limit(max(1, int(per_query)))
@@ -56,6 +58,7 @@ def search_policy_chunks(
             ilike_stmt = (
                 select(models.PolicyChunk)
                 .where(models.PolicyChunk.party_id == party_id)
+                .where(non_deprecated)
                 .where(models.PolicyChunk.content.ilike(f"%{q}%"))
                 .limit(max(1, int(per_query)))
             )

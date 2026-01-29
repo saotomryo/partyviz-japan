@@ -159,7 +159,17 @@
         <label>axis_a_hint<input id="axisAHint" placeholder="積極財政（財政出動）" /></label>
         <label>axis_b_hint<input id="axisBHint" placeholder="規律重視（PB/債務抑制）" /></label>
       </div>
+      <p class="small" style="margin:8px 0 0;">
+        注意: ルーブリックの方向は全トピックで統一しています（-100側=axis_a / +100側=axis_b）。<br>
+        基準を逆にしたい場合は、生成後に「軸反転（-100⇄+100）」を使ってください。
+      </p>
       <label style="margin-top:10px;">description<textarea id="genDesc" placeholder="説明（任意）"></textarea></label>
+      <div class="row" style="margin-top:10px;">
+        <label style="min-width: 240px;">
+          <span class="small">軸反転（-100⇄+100）して保存</span>
+          <input id="genReverseAxis" type="checkbox" />
+        </label>
+      </div>
       <div class="row" style="margin-top:10px;">
         <button class="button-link" id="generateRubric">生成して保存（POST）</button>
         <button class="button-link" id="refreshRubrics">ルーブリック一覧更新</button>

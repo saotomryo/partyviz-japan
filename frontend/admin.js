@@ -24,6 +24,7 @@ const genStepsCountEl = document.getElementById("genStepsCount");
 const axisAHintEl = document.getElementById("axisAHint");
 const axisBHintEl = document.getElementById("axisBHint");
 const genDescEl = document.getElementById("genDesc");
+const genReverseAxisEl = document.getElementById("genReverseAxis");
 const generateRubricBtn = document.getElementById("generateRubric");
 const refreshRubricsBtn = document.getElementById("refreshRubrics");
 const rubricListEl = document.getElementById("rubricList");
@@ -70,11 +71,13 @@ const purgePolicyScoresBtn = document.getElementById("purgePolicyScores");
 const purgeAllBtn = document.getElementById("purgeAll");
 
 // Deep Research prompt generator (policy page)
-const drTopicIdEl = document.getElementById("drTopicId");
-const drRubricPreviewEl = document.getElementById("drRubricPreview");
+const drMaxItemsPerTopicEl = document.getElementById("drMaxItemsPerTopic");
 const generateDeepResearchPromptBtn = document.getElementById("generateDeepResearchPrompt");
 const copyDeepResearchPromptBtn = document.getElementById("copyDeepResearchPrompt");
 const deepResearchPromptOutputEl = document.getElementById("deepResearchPromptOutput");
+const researchPackInputEl = document.getElementById("researchPackInput");
+const importResearchPackBtn = document.getElementById("importResearchPack");
+const importResearchPackResultEl = document.getElementById("importResearchPackResult");
 
 let selectedTopic = null;
 let selectedParty = null;
@@ -107,43 +110,25 @@ function _normalizeMultilineUrls(text) {
     .map((s) => s.replace(/^["']|["']$/g, "")); // strip copy/paste quotes
 }
 
-function _rubricToText(rubric) {
-  if (!rubric) return "";
-  const axis = `${rubric.axis_a_label || ""} ⇄ ${rubric.axis_b_label || ""}`.trim();
-  const steps = Array.isArray(rubric.steps) ? rubric.steps : [];
-  const lines = steps
-    .map((s) => {
-      const score = s?.score ?? "";
-      const label = s?.label ?? "";
-      const criteria = s?.criteria ?? "";
-      return `- score=${score} label=${label} criteria=${criteria}`.trim();
-    })
-    .filter(Boolean);
-  return [`axis: ${axis}`, ...lines].join("\n");
-}
-
-async function _getActiveRubric(topicId) {
-  if (!topicId) return null;
-  const rubrics = await request(`/admin/topics/${encodeURIComponent(topicId)}/rubrics`);
-  if (!Array.isArray(rubrics) || rubrics.length === 0) return null;
-  const active = rubrics.filter((r) => String(r.status || "") === "active");
-  const pick = (active.length ? active : rubrics).slice().sort((a, b) => (b.version || 0) - (a.version || 0))[0];
-  return pick || null;
-}
-
-function _buildDeepResearchPrompt({ party, topic, rubric, allowedDomains, policyBaseUrls, officialHomeUrl }) {
+function _buildDeepResearchPromptAllTopics({ party, topics, allowedDomains, policyBaseUrls, officialHomeUrl, maxItemsPerTopic }) {
   const partyName = party?.name_ja || "";
   const partyId = party?.party_id || "";
-  const topicId = topic?.topic_id || "";
-  const topicName = topic?.name || "";
-  const topicDesc = topic?.description || "";
   const domainsCsv = (allowedDomains || []).join(", ");
   const baseUrlsText = (policyBaseUrls || []).map((u) => `- ${u}`).join("\n");
-  const rubricText = _rubricToText(rubric);
   const nowIso = new Date().toISOString();
+  const topicLines = (topics || [])
+    .map((t) => {
+      const id = t?.topic_id || "";
+      const name = t?.name || "";
+      const desc = t?.description || "";
+      return `- ${id}: ${name}${desc ? ` / ${desc}` : ""}`.trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+  const maxPerTopic = Math.max(1, Math.min(5, Math.trunc(Number(maxItemsPerTopic || 2))));
 
   return `あなたは日本の政党の公式一次情報から、指定トピックに関する記述を抽出するリサーチャーです。
-目的: 「公式ページおよび policy_base_urls 配下」だけを使って、トピックに関連する根拠箇所（引用）を収集し、指定のJSON（リサーチパック）で出力してください。
+目的: 「公式ページおよび policy_base_urls 配下」だけを使って、全トピック（active）について関連する根拠箇所（引用）を収集し、指定のJSON（リサーチパック）で出力してください。
 
 対象政党:
 - party_name_ja: ${partyName}
@@ -160,19 +145,15 @@ ${baseUrlsText || "- （未設定）"}
 - 上記以外の外部サイト、SNS、まとめ、ニュース記事の参照
 - 推測で埋めること（見つからない場合は見つからないと明示）
 
-トピック:
-- topic_id: ${topicId}
-- topic_name: ${topicName}
-- topic_description: ${topicDesc}
-
-参考（ルーブリック / 軸と基準）:
-${rubricText ? rubricText : "（このトピックのルーブリックが見つかりません。トピック説明に沿って抽出してください。）"}
+トピック一覧（active）:
+${topicLines || "- （トピックがありません）"}
 
 作業指示:
-1) policy_base_urls から開始し、トピックに関連する箇所（本文またはPDFの該当箇所）を探してください。
+1) policy_base_urls から開始し、各トピックに関連する箇所（本文またはPDFの該当箇所）を探してください。
 2) 根拠は必ず URL とセットで、短い引用（quote: 1〜3文程度）を抜き出してください。
 3) quote が意味する主張を1文で claim にまとめてください。
 4) 古い選挙の公約など「現時点の最新ではない」と判断できる場合は deprecated=true とし、deprecated_reason を付けてください。
+5) 各トピックあたり最大 ${maxPerTopic} 件（重要順）に絞ってください。該当が無いトピックは無理に作らず、notes に topic_id を列挙してください。
 
 出力（重要: JSONのみ、余計な説明なし）:
 次のスキーマの JSON を出力してください（リサーチパック）。
@@ -181,6 +162,7 @@ ${rubricText ? rubricText : "（このトピックのルーブリックが見つ
   "version": 1,
   "generated_at": "${nowIso}",
   "generator": "chatgpt_deep_research",
+  "notes": "見つからなかった topic_id: ...",
   "parties": [
     {
       "party_id": "${partyId}",
@@ -191,7 +173,7 @@ ${rubricText ? rubricText : "（このトピックのルーブリックが見つ
           "source_title": "任意",
           "fetched_at": "${nowIso}",
           "source_type": "official_html",
-          "topic_ids": ["${topicId}"],
+          "topic_ids": ["<topic_id>"],
           "quote": "…",
           "claim": "…",
           "deprecated": false,
@@ -203,7 +185,7 @@ ${rubricText ? rubricText : "（このトピックのルーブリックが見つ
 }
 
 備考:
-- items は最重要なものから最大3件程度に絞ってください。
+- items は「topic_ids ごと」に最大 ${maxPerTopic} 件程度に絞ってください。
 - URL は実在するものだけを出してください。
 - fetched_at はあなたが確認した時刻（${nowIso} 付近）でOKです。`;
 }
@@ -380,17 +362,36 @@ async function upsertTopic() {
   }
 }
 
-function rubricToEditableHtml(r) {
-  const stepsRows = (r.steps || [])
+function flipRubricPayload(payload) {
+  const axis_a_label = String(payload.axis_b_label || "").trim();
+  const axis_b_label = String(payload.axis_a_label || "").trim();
+  const status = payload.status;
+  const steps = Array.isArray(payload.steps) ? payload.steps : [];
+  const flippedSteps = steps
+    .map((s) => ({
+      score: -Number(s.score),
+      label: s.label,
+      criteria: s.criteria,
+    }))
+    .sort((a, b) => a.score - b.score);
+  return { axis_a_label, axis_b_label, status, steps: flippedSteps };
+}
+
+function stepsToRowsHtml(steps) {
+  return (steps || [])
     .map(
       (s, idx) => `
       <tr>
-        <td><input data-field="score" data-idx="${idx}" type="number" min="-100" max="100" value="${s.score}"/></td>
+        <td><input data-field="score" data-idx="${idx}" type="number" min="-100" max="100" value="${escapeHtml(s.score)}"/></td>
         <td><input data-field="label" data-idx="${idx}" value="${escapeHtml(s.label || "")}"/></td>
         <td><textarea data-field="criteria" data-idx="${idx}">${escapeHtml(s.criteria || "")}</textarea></td>
       </tr>`
     )
     .join("");
+}
+
+function rubricToEditableHtml(r) {
+  const stepsRows = stepsToRowsHtml(r.steps || []);
 
   return `
     <div class="rubric-item" data-rubric-id="${r.rubric_id}">
@@ -400,6 +401,7 @@ function rubricToEditableHtml(r) {
           <div class="rubric-meta">axis: ${escapeHtml(r.axis_a_label)} ⇄ ${escapeHtml(r.axis_b_label)}</div>
         </div>
         <div>
+          <button class="button-link" data-action="flipSave">軸反転して保存</button>
           <button class="button-link" data-action="activate">Activate</button>
           <button class="button-link" data-action="save">保存（PATCH）</button>
         </div>
@@ -474,6 +476,17 @@ function wireRubricActions() {
   if (!rubricListEl) return;
   rubricListEl.querySelectorAll(".rubric-item").forEach((el) => {
     const rubricId = el.dataset.rubricId;
+    el.querySelector('button[data-action="flipSave"]')?.addEventListener("click", async () => {
+      if (!confirm("軸を反転して保存します（-100⇄+100）。よろしいですか？")) return;
+      try {
+        const payload = collectRubricPayload(el);
+        const flipped = flipRubricPayload(payload);
+        await request(`/admin/rubrics/${encodeURIComponent(rubricId)}`, { method: "PATCH", body: flipped });
+        await loadRubrics();
+      } catch (e) {
+        alert(`反転保存失敗: ${e.message}`);
+      }
+    });
     el.querySelector('button[data-action="save"]').addEventListener("click", async () => {
       try {
         const payload = collectRubricPayload(el);
@@ -511,10 +524,19 @@ async function generateRubric() {
     steps_count: Number(genStepsCountEl.value || 5),
   };
   try {
-    await request(`/admin/topics/${encodeURIComponent(selectedTopic.topic_id)}/rubrics/generate`, {
+    const res = await request(`/admin/topics/${encodeURIComponent(selectedTopic.topic_id)}/rubrics/generate`, {
       method: "POST",
       body,
     });
+    if (genReverseAxisEl?.checked && res?.rubric?.rubric_id) {
+      const flipped = flipRubricPayload({
+        axis_a_label: res.rubric.axis_a_label,
+        axis_b_label: res.rubric.axis_b_label,
+        status: res.rubric.status,
+        steps: res.rubric.steps,
+      });
+      await request(`/admin/rubrics/${encodeURIComponent(res.rubric.rubric_id)}`, { method: "PATCH", body: flipped });
+    }
     await loadRubrics();
   } catch (e) {
     alert(`生成失敗: ${e.message}`);
@@ -924,77 +946,28 @@ downloadSnapshotBtn?.addEventListener("click", () =>
 );
 runSummaryBtn?.addEventListener("click", () => runPartySummaries());
 
-async function loadTopicsForDeepResearch() {
-  if (!drTopicIdEl) return;
-  try {
-    const topics = await request("/admin/topics");
-    drTopicIdEl.innerHTML = "";
-    (topics || []).forEach((t) => {
-      const opt = document.createElement("option");
-      opt.value = t.topic_id;
-      opt.textContent = `${t.topic_id} - ${t.name}`;
-      drTopicIdEl.appendChild(opt);
-    });
-    if (topics?.length) {
-      drTopicIdEl.value = topics[0].topic_id;
-      await refreshDeepResearchRubricPreview();
-    }
-  } catch (e) {
-    drTopicIdEl.innerHTML = "";
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = `取得失敗: ${e.message}`;
-    drTopicIdEl.appendChild(opt);
-  }
-}
-
-async function refreshDeepResearchRubricPreview() {
-  if (!drRubricPreviewEl || !drTopicIdEl) return;
-  const topicId = (drTopicIdEl.value || "").trim();
-  if (!topicId) {
-    drRubricPreviewEl.textContent = "";
-    return;
-  }
-  try {
-    const rubric = await _getActiveRubric(topicId);
-    const text = _rubricToText(rubric);
-    drRubricPreviewEl.textContent = text ? `ルーブリック（active優先）:\n${text}` : "ルーブリックがありません。";
-  } catch (e) {
-    drRubricPreviewEl.textContent = `ルーブリック取得失敗: ${e.message}`;
-  }
-}
-
 generateDeepResearchPromptBtn?.addEventListener("click", async () => {
   if (!deepResearchPromptOutputEl) return;
   if (!selectedParty) {
     alert("先に政党を選択してください");
     return;
   }
-  if (!drTopicIdEl) {
-    alert("topic選択がありません");
-    return;
-  }
-  const topicId = (drTopicIdEl.value || "").trim();
-  if (!topicId) {
-    alert("topic を選択してください");
-    return;
-  }
   try {
-    const topic = await request(`/admin/topics`).then((ts) => (ts || []).find((t) => t.topic_id === topicId) || null);
-    const rubric = await _getActiveRubric(topicId);
+    const topics = await request("/admin/topics");
+    const activeTopics = (topics || []).filter((t) => t && t.is_active !== false);
     const officialHomeUrl = (selectedParty.official_home_url || "").trim();
     const policyBaseUrls = partyPolicyUrlsEl ? _normalizeMultilineUrls(partyPolicyUrlsEl.value) : [];
     const allowedDomains = Array.isArray(selectedParty.allowed_domains) ? selectedParty.allowed_domains : [];
-    const prompt = _buildDeepResearchPrompt({
+    const maxItemsPerTopic = Number(drMaxItemsPerTopicEl?.value || 2);
+    const prompt = _buildDeepResearchPromptAllTopics({
       party: selectedParty,
-      topic,
-      rubric,
+      topics: activeTopics,
       allowedDomains,
       policyBaseUrls,
       officialHomeUrl,
+      maxItemsPerTopic,
     });
     deepResearchPromptOutputEl.value = prompt;
-    await refreshDeepResearchRubricPreview();
   } catch (e) {
     deepResearchPromptOutputEl.value = `生成失敗: ${e.message}`;
   }
@@ -1019,8 +992,119 @@ copyDeepResearchPromptBtn?.addEventListener("click", async () => {
   }
 });
 
-drTopicIdEl?.addEventListener("change", () => {
-  refreshDeepResearchRubricPreview();
+importResearchPackBtn?.addEventListener("click", async () => {
+  if (!researchPackInputEl) return;
+  if (!importResearchPackResultEl) return;
+  const text = (researchPackInputEl.value || "").trim();
+  if (!text) {
+    alert("JSONを貼り付けてください");
+    return;
+  }
+  function parseJsonFromText(raw) {
+    const s = String(raw || "").trim();
+    if (!s) throw new Error("empty input");
+    const cleaned = s.replace(/^```(?:json)?\s*/i, "").replace(/```$/m, "").trim();
+    function extractObjectBlock(t) {
+      const start = t.indexOf("{");
+      const end = t.lastIndexOf("}");
+      if (start >= 0 && end > start) return t.slice(start, end + 1);
+      return "";
+    }
+    function repairJsonLikelyFromLLM(t) {
+      // LLM outputs sometimes include raw newlines inside JSON string literals.
+      // JSON requires newlines to be escaped as \\n inside strings.
+      let out = "";
+      let inStr = false;
+      let esc = false;
+      for (let i = 0; i < t.length; i++) {
+        const ch = t[i];
+        if (!inStr) {
+          if (ch === '"') inStr = true;
+          out += ch;
+          continue;
+        }
+        // in string
+        if (esc) {
+          out += ch;
+          esc = false;
+          continue;
+        }
+        if (ch === "\\") {
+          out += ch;
+          esc = true;
+          continue;
+        }
+        if (ch === '"') {
+          out += ch;
+          inStr = false;
+          continue;
+        }
+        if (ch === "\n") {
+          out += "\\n";
+          continue;
+        }
+        if (ch === "\r") {
+          out += "\\r";
+          continue;
+        }
+        if (ch === "\t") {
+          out += "\\t";
+          continue;
+        }
+        out += ch;
+      }
+      return out;
+    }
+
+    const attemptStrings = [];
+    attemptStrings.push(cleaned);
+    const block = extractObjectBlock(cleaned);
+    if (block) attemptStrings.push(block);
+    // Try repaired variants (for raw newlines in strings, etc.)
+    attemptStrings.push(repairJsonLikelyFromLLM(block || cleaned));
+
+    let lastErr = null;
+    for (const candidate of attemptStrings) {
+      if (!candidate) continue;
+      try {
+        return JSON.parse(candidate);
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (lastErr) throw lastErr;
+    throw new Error("no JSON object found");
+  }
+  let payload;
+  try {
+    payload = parseJsonFromText(text);
+  } catch (e) {
+    alert(`JSONのパースに失敗しました: ${e.message}`);
+    return;
+  }
+  importResearchPackResultEl.innerHTML = `<p class="muted">取り込み中...</p>`;
+  try {
+    const resp = await request("/admin/research/import", { method: "POST", body: payload });
+    const stats = resp?.stats || {};
+    const errors = Array.isArray(resp?.errors) ? resp.errors : [];
+    const errHtml = errors.length
+      ? `<details style="margin-top:8px;"><summary class="small">errors (${errors.length})</summary><pre class="small" style="white-space:pre-wrap; margin:8px 0 0;">${escapeHtml(JSON.stringify(errors, null, 2))}</pre></details>`
+      : "";
+    importResearchPackResultEl.innerHTML = `
+      <div class="rubric-item">
+        <div class="rubric-meta">parties: ${escapeHtml(stats.parties ?? "")}</div>
+        <div class="rubric-meta">items_total: ${escapeHtml(stats.items_total ?? "")}</div>
+        <div class="rubric-meta">documents_upserted: ${escapeHtml(stats.documents_upserted ?? "")}</div>
+        <div class="rubric-meta">documents_unchanged: ${escapeHtml(stats.documents_unchanged ?? "")}</div>
+        <div class="rubric-meta">chunks_written: ${escapeHtml(stats.chunks_written ?? "")}</div>
+        <div class="rubric-meta">skipped: ${escapeHtml(stats.skipped ?? "")}</div>
+      </div>
+      ${errHtml}
+    `;
+    alert("取り込みが完了しました");
+  } catch (e) {
+    importResearchPackResultEl.innerHTML = `<p class="muted">取り込み失敗: ${escapeHtml(e.message)}</p>`;
+  }
 });
 
 // init
@@ -1035,7 +1119,6 @@ if (geminiRubricModelEl) geminiRubricModelEl.value = getModel("partyviz_admin_ge
 clearPartyForm();
 if (topicListEl) loadTopics();
 if (partyListEl) loadParties();
-if (drTopicIdEl) loadTopicsForDeepResearch();
 
 if (partyDiscoverQueryEl) {
   partyDiscoverQueryEl.value =

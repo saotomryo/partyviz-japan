@@ -98,21 +98,27 @@
       </section>
 
       <section class="card">
-        <h3 style="margin:0 0 8px;">Deep Research プロンプト生成</h3>
-        <p class="small">選択中の政党とトピックに対して、公式ページと policy_base_urls のみを使う Deep Research（手作業）用プロンプトを生成します。</p>
+        <h3 style="margin:0 0 8px;">Deep Research（全トピック一括）プロンプト生成</h3>
+        <p class="small">選択中の政党について、全トピック（active）の関連箇所をまとめて抽出する Deep Research（手作業）用プロンプトを生成します（ルーブリックは含めません）。</p>
         <div class="row">
-          <label>topic
-            <select id="drTopicId"></select>
-          </label>
+          <label>max_items_per_topic<input id="drMaxItemsPerTopic" type="number" min="1" max="5" value="2" /></label>
         </div>
-        <div class="divider"></div>
-        <div id="drRubricPreview" class="small"></div>
         <div class="row" style="margin-top:10px;">
           <button class="button-link" id="generateDeepResearchPrompt">プロンプト生成</button>
           <button class="button-link" id="copyDeepResearchPrompt">コピー</button>
         </div>
         <label style="margin-top:10px;">prompt<textarea id="deepResearchPromptOutput" placeholder="ここに生成されます" style="min-height: 220px;"></textarea></label>
         <p class="small">出力は「リサーチパックJSON（partyviz_research_pack）」形式で返すよう指示します（後で取り込み予定）。</p>
+      </section>
+
+      <section class="card">
+        <h3 style="margin:0 0 8px;">Deep Research JSON 取り込み（貼り付け）</h3>
+        <p class="small">Deep Research の出力JSON（partyviz_research_pack）を貼り付けて、DBの policy_documents/policy_chunks に取り込みます。</p>
+        <label>research_pack.json<textarea id="researchPackInput" placeholder='{"format":"partyviz_research_pack","version":1,"generated_at":"...","generator":"chatgpt_deep_research","parties":[...]}' style="min-height: 220px;"></textarea></label>
+        <div class="row" style="margin-top:10px;">
+          <button class="button-link" id="importResearchPack">取り込み（append）</button>
+        </div>
+        <div id="importResearchPackResult" style="margin-top:10px;"></div>
       </section>
     </div>
   </main>
