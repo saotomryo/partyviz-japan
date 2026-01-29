@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PartyViz Admin - Policy</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .admin-grid { display: grid; grid-template-columns: 360px 1fr; gap: 18px; padding: 22px 24px 40px; }
+    .admin-grid { align-items: start; }
+    .right-stack { display: flex; flex-direction: column; gap: 18px; align-self: start; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .row > * { flex: 1; min-width: 160px; }
+    input, textarea {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      width: 100%;
+    }
+    textarea { min-height: 84px; resize: vertical; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); }
+    .divider { height: 1px; background: var(--border); margin: 14px 0; }
+    .rubric-item { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+    .rubric-item header { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .rubric-item header h3 { margin: 0; font-size: 14px; }
+    .rubric-meta { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+    .small { font-size: 12px; color: var(--muted); }
+    .link { color: var(--accent-2); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <p class="eyebrow">PartyViz Admin</p>
+      <h1>管理（政策処理）</h1>
+      <p class="lede">政党の policy_base_urls 登録、クロール、政策/スコア削除などを操作します。</p>
+      <div class="controls">
+        <label>
+          API Base
+          <input id="apiBase" placeholder="http://localhost:8000" />
+        </label>
+        <label>
+          X-API-Key（任意）
+          <input id="apiKey" placeholder="admin-key（未設定なら空でOK）" />
+        </label>
+        <div style="align-self:flex-end;">
+          <button class="button-link" id="saveConfig">API設定を保存</button>
+          <a class="button-link link" href="admin.html" style="margin-left:8px; display:inline-block;">トピック管理へ</a>
+          <a class="button-link link" href="admin_parties.html" style="margin-left:8px; display:inline-block;">政党レジストリへ</a>
+          <a class="button-link link" href="admin_misc.html" style="margin-left:8px; display:inline-block;">その他管理へ</a>
+          <a class="button-link link" href="index.html" style="margin-left:8px; display:inline-block;">公開UIへ</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-grid">
+    <aside class="panel">
+      <div class="panel__header">
+        <h2>政党一覧</h2>
+      </div>
+      <div style="padding: 12px;">
+        <div class="row" style="margin-top:10px;">
+          <button class="button-link" id="refreshParties">一覧更新</button>
+        </div>
+        <p class="small" style="margin-top:10px;">下の一覧から政党をクリックすると、右の「政策処理」に反映されます。</p>
+        <div id="partyList" style="margin-top:10px;"></div>
+      </div>
+    </aside>
+
+    <div class="right-stack">
+      <section class="card">
+        <h3 style="margin:0 0 8px;">政策処理</h3>
+        <div class="rubric-meta">選択中: <span id="selectedPartyId">(none)</span></div>
+
+        <div class="row" style="margin-top:10px;">
+          <label>name_ja（参照用）<input id="partyNameJa" readonly /></label>
+          <label>official_home_url（参照用）<input id="partyHomeUrl" readonly /></label>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <label>allowed_domains（参照用）<input id="partyDomains" readonly /></label>
+          <label>status（参照用）<input id="partyStatus" readonly /></label>
+        </div>
+
+        <label style="margin-top:10px;">policy_base_urls（改行区切り）<textarea id="partyPolicyUrls" placeholder="https://example.jp/policy/"></textarea></label>
+
+        <div class="row" style="margin-top:10px;">
+          <button class="button-link" id="savePolicySources">policy_base_urls を保存</button>
+          <button class="button-link" id="crawlPolicySources">政策URLをクロール</button>
+          <button class="button-link danger" id="purgePolicyScores" title="policy_documents/policy_chunks と score_runs/topic_scores を削除します（確認が必要）">政策/スコアだけ削除</button>
+        </div>
+
+        <div class="divider"></div>
+        <p class="small">注意: クロールはサイト側の制限により 403/429 になることがあります（User-Agent などで改善する場合があります）。</p>
+      </section>
+
+      <section class="card">
+        <h3 style="margin:0 0 8px;">Deep Research（全トピック一括）プロンプト生成</h3>
+        <p class="small">選択中の政党について、全トピック（active）の関連箇所をまとめて抽出する Deep Research（手作業）用プロンプトを生成します（ルーブリックは含めません）。</p>
+        <div class="row">
+          <label>max_items_per_topic<input id="drMaxItemsPerTopic" type="number" min="1" max="5" value="2" /></label>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="button-link" id="generateDeepResearchPrompt">プロンプト生成</button>
+          <button class="button-link" id="copyDeepResearchPrompt">コピー</button>
+        </div>
+        <label style="margin-top:10px;">prompt<textarea id="deepResearchPromptOutput" placeholder="ここに生成されます" style="min-height: 220px;"></textarea></label>
+        <p class="small">出力は「リサーチパックJSON（partyviz_research_pack）」形式で返すよう指示します（後で取り込み予定）。</p>
+      </section>
+
+      <section class="card">
+        <h3 style="margin:0 0 8px;">Deep Research JSON 取り込み（貼り付け）</h3>
+        <p class="small">Deep Research の出力JSON（partyviz_research_pack）を貼り付けて、DBの policy_documents/policy_chunks に取り込みます。</p>
+        <label>research_pack.json<textarea id="researchPackInput" placeholder='{"format":"partyviz_research_pack","version":1,"generated_at":"...","generator":"chatgpt_deep_research","parties":[...]}' style="min-height: 220px;"></textarea></label>
+        <div class="row" style="margin-top:10px;">
+          <button class="button-link" id="importResearchPack">取り込み（append）</button>
+        </div>
+        <div id="importResearchPackResult" style="margin-top:10px;"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>

@@ -36,6 +36,7 @@ from ..services import policy_sources
 from ..services import policy_crawler
 from ..services import scoring_runs
 from ..services import snapshot_export
+from ..services import research_import
 from ..settings import settings
 from ..services import topic_rubrics
 from ..agents import rubric_generator
@@ -178,6 +179,15 @@ def discover_parties(req: PartyRegistryDiscoverRequest, db: Session = Depends(ge
 def export_snapshot(db: Session = Depends(get_db)):
     """公開用のスナップショットJSON（静的ホスティング向け）。"""
     return snapshot_export.build_snapshot(db)
+
+@router.post("/research/import", dependencies=[Depends(require_api_key)])
+def import_research_pack_endpoint(payload: dict, db: Session = Depends(get_db)) -> dict:
+    """Deep Research（手作業）の出力JSON（partyviz_research_pack）を policy_documents/policy_chunks に取り込む。"""
+    try:
+        stats, errors = research_import.import_research_pack(db, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"stats": stats.__dict__, "errors": errors}
 
 @router.post("/dev/purge", response_model=AdminPurgeResponse, dependencies=[Depends(require_api_key)])
 def admin_purge_endpoint(req: AdminPurgeRequest, db: Session = Depends(get_db)) -> AdminPurgeResponse:

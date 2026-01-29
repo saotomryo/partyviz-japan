@@ -24,6 +24,7 @@ const genStepsCountEl = document.getElementById("genStepsCount");
 const axisAHintEl = document.getElementById("axisAHint");
 const axisBHintEl = document.getElementById("axisBHint");
 const genDescEl = document.getElementById("genDesc");
+const genReverseAxisEl = document.getElementById("genReverseAxis");
 const generateRubricBtn = document.getElementById("generateRubric");
 const refreshRubricsBtn = document.getElementById("refreshRubrics");
 const rubricListEl = document.getElementById("rubricList");
@@ -58,6 +59,7 @@ const updatePartyBtn = document.getElementById("updateParty");
 const clearPartyFormBtn = document.getElementById("clearPartyForm");
 const refreshPartiesBtn = document.getElementById("refreshParties");
 const crawlPolicySourcesBtn = document.getElementById("crawlPolicySources");
+const savePolicySourcesBtn = document.getElementById("savePolicySources");
 const partyListEl = document.getElementById("partyList");
 const selectedPartyIdEl = document.getElementById("selectedPartyId");
 const partyDiscoverQueryEl = document.getElementById("partyDiscoverQuery");
@@ -67,6 +69,15 @@ const purgePartiesBtn = document.getElementById("purgeParties");
 const purgeTopicsBtn = document.getElementById("purgeTopics");
 const purgePolicyScoresBtn = document.getElementById("purgePolicyScores");
 const purgeAllBtn = document.getElementById("purgeAll");
+
+// Deep Research prompt generator (policy page)
+const drMaxItemsPerTopicEl = document.getElementById("drMaxItemsPerTopic");
+const generateDeepResearchPromptBtn = document.getElementById("generateDeepResearchPrompt");
+const copyDeepResearchPromptBtn = document.getElementById("copyDeepResearchPrompt");
+const deepResearchPromptOutputEl = document.getElementById("deepResearchPromptOutput");
+const researchPackInputEl = document.getElementById("researchPackInput");
+const importResearchPackBtn = document.getElementById("importResearchPack");
+const importResearchPackResultEl = document.getElementById("importResearchPackResult");
 
 let selectedTopic = null;
 let selectedParty = null;
@@ -89,6 +100,94 @@ function getRubricProvider() {
 
 function getModel(key, fallback) {
   return (localStorage.getItem(key) || fallback || "").trim();
+}
+
+function _normalizeMultilineUrls(text) {
+  return (text || "")
+    .split("\n")
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .map((s) => s.replace(/^["']|["']$/g, "")); // strip copy/paste quotes
+}
+
+function _buildDeepResearchPromptAllTopics({ party, topics, allowedDomains, policyBaseUrls, officialHomeUrl, maxItemsPerTopic }) {
+  const partyName = party?.name_ja || "";
+  const partyId = party?.party_id || "";
+  const domainsCsv = (allowedDomains || []).join(", ");
+  const baseUrlsText = (policyBaseUrls || []).map((u) => `- ${u}`).join("\n");
+  const nowIso = new Date().toISOString();
+  const topicLines = (topics || [])
+    .map((t) => {
+      const id = t?.topic_id || "";
+      const name = t?.name || "";
+      const desc = t?.description || "";
+      return `- ${id}: ${name}${desc ? ` / ${desc}` : ""}`.trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+  const maxPerTopic = Math.max(1, Math.min(5, Math.trunc(Number(maxItemsPerTopic || 2))));
+
+  return `あなたは日本の政党の公式一次情報から、指定トピックに関する記述を抽出するリサーチャーです。
+目的: 「公式ページおよび policy_base_urls 配下」だけを使って、全トピック（active）について関連する根拠箇所（引用）を収集し、指定のJSON（リサーチパック）で出力してください。
+
+対象政党:
+- party_name_ja: ${partyName}
+- party_id: ${partyId}
+- official_home_url: ${officialHomeUrl || ""}
+- allowed_domains: ${domainsCsv}
+
+使用してよいソース（厳守）:
+- official_home_url のドメイン（allowed_domains内）にあるページ
+- 次の policy_base_urls（配下を含む）
+${baseUrlsText || "- （未設定）"}
+
+禁止:
+- 上記以外の外部サイト、SNS、まとめ、ニュース記事の参照
+- 推測で埋めること（見つからない場合は見つからないと明示）
+
+トピック一覧（active）:
+${topicLines || "- （トピックがありません）"}
+
+作業指示:
+1) policy_base_urls から開始し、各トピックに関連する箇所（本文またはPDFの該当箇所）を探してください。
+2) 根拠は必ず URL とセットで、短い引用（quote: 1〜3文程度）を抜き出してください。
+3) quote が意味する主張を1文で claim にまとめてください。
+4) 古い選挙の公約など「現時点の最新ではない」と判断できる場合は deprecated=true とし、deprecated_reason を付けてください。
+5) 各トピックあたり最大 ${maxPerTopic} 件（重要順）に絞ってください。該当が無いトピックは無理に作らず、notes に topic_id を列挙してください。
+
+出力（重要: JSONのみ、余計な説明なし）:
+次のスキーマの JSON を出力してください（リサーチパック）。
+{
+  "format": "partyviz_research_pack",
+  "version": 1,
+  "generated_at": "${nowIso}",
+  "generator": "chatgpt_deep_research",
+  "notes": "見つからなかった topic_id: ...",
+  "parties": [
+    {
+      "party_id": "${partyId}",
+      "party_name_ja": "${partyName}",
+      "items": [
+        {
+          "source_url": "https://...",
+          "source_title": "任意",
+          "fetched_at": "${nowIso}",
+          "source_type": "official_html",
+          "topic_ids": ["<topic_id>"],
+          "quote": "…",
+          "claim": "…",
+          "deprecated": false,
+          "deprecated_reason": "任意"
+        }
+      ]
+    }
+  ]
+}
+
+備考:
+- items は「topic_ids ごと」に最大 ${maxPerTopic} 件程度に絞ってください。
+- URL は実在するものだけを出してください。
+- fetched_at はあなたが確認した時刻（${nowIso} 付近）でOKです。`;
 }
 
 function setConfig(apiBase, apiKey) {
@@ -146,6 +245,7 @@ async function downloadSnapshot() {
 }
 
 async function runPartySummaries() {
+  if (!summaryResultEl) return;
   const scope = (summaryScopeEl?.value || "official").trim();
   summaryResultEl.innerHTML = `<p class="muted">要旨を生成中...</p>`;
   try {
@@ -180,6 +280,7 @@ function pillClass(status) {
 }
 
 function renderTopics(topics) {
+  if (!topicListEl) return;
   topicListEl.innerHTML = "";
   topics.forEach((t) => {
     const li = document.createElement("li");
@@ -196,30 +297,33 @@ function renderTopics(topics) {
 
 function selectTopic(topic) {
   selectedTopic = topic;
-  document.querySelectorAll(".topic-item").forEach((el) => el.classList.remove("active"));
-  const match = Array.from(topicListEl.children).find((li) =>
-    li.querySelector(".eyebrow")?.textContent === topic.topic_id
-  );
-  if (match) match.classList.add("active");
+  if (topicListEl) {
+    document.querySelectorAll(".topic-item").forEach((el) => el.classList.remove("active"));
+    const match = Array.from(topicListEl.children).find((li) =>
+      li.querySelector(".eyebrow")?.textContent === topic.topic_id
+    );
+    if (match) match.classList.add("active");
+  }
 
-  selTopicIdEl.textContent = topic.topic_id;
-  selTopicTitleEl.textContent = topic.name;
-  selTopicDescEl.textContent = topic.description || "";
+  if (selTopicIdEl) selTopicIdEl.textContent = topic.topic_id;
+  if (selTopicTitleEl) selTopicTitleEl.textContent = topic.name;
+  if (selTopicDescEl) selTopicDescEl.textContent = topic.description || "";
 
-  topicIdInput.value = topic.topic_id;
-  topicNameInput.value = topic.name;
-  topicDescInput.value = topic.description || "";
+  if (topicIdInput) topicIdInput.value = topic.topic_id;
+  if (topicNameInput) topicNameInput.value = topic.name;
+  if (topicDescInput) topicDescInput.value = topic.description || "";
   const kws = topic.search_subkeywords || [];
-  topicSubkeywordsInput.value = kws.length ? kws.join(", ") : "（生成結果が空です）";
+  if (topicSubkeywordsInput) topicSubkeywordsInput.value = kws.length ? kws.join(", ") : "（生成結果が空です）";
   if (topicActiveEl) topicActiveEl.value = String(topic.is_active !== false);
 
-  genTopicNameEl.value = topic.name;
-  genDescEl.value = topic.description || "";
+  if (genTopicNameEl) genTopicNameEl.value = topic.name;
+  if (genDescEl) genDescEl.value = topic.description || "";
 
   loadRubrics();
 }
 
 async function loadTopics() {
+  if (!topicListEl) return;
   try {
     const topics = await request("/admin/topics");
     renderTopics(topics);
@@ -230,6 +334,7 @@ async function loadTopics() {
 }
 
 async function upsertTopic() {
+  if (!topicIdInput || !topicNameInput || !topicDescInput) return;
   const topic_id = topicIdInput.value.trim();
   const name = topicNameInput.value.trim();
   const description = topicDescInput.value.trim() || null;
@@ -257,17 +362,36 @@ async function upsertTopic() {
   }
 }
 
-function rubricToEditableHtml(r) {
-  const stepsRows = (r.steps || [])
+function flipRubricPayload(payload) {
+  const axis_a_label = String(payload.axis_b_label || "").trim();
+  const axis_b_label = String(payload.axis_a_label || "").trim();
+  const status = payload.status;
+  const steps = Array.isArray(payload.steps) ? payload.steps : [];
+  const flippedSteps = steps
+    .map((s) => ({
+      score: -Number(s.score),
+      label: s.label,
+      criteria: s.criteria,
+    }))
+    .sort((a, b) => a.score - b.score);
+  return { axis_a_label, axis_b_label, status, steps: flippedSteps };
+}
+
+function stepsToRowsHtml(steps) {
+  return (steps || [])
     .map(
       (s, idx) => `
       <tr>
-        <td><input data-field="score" data-idx="${idx}" type="number" min="-100" max="100" value="${s.score}"/></td>
+        <td><input data-field="score" data-idx="${idx}" type="number" min="-100" max="100" value="${escapeHtml(s.score)}"/></td>
         <td><input data-field="label" data-idx="${idx}" value="${escapeHtml(s.label || "")}"/></td>
         <td><textarea data-field="criteria" data-idx="${idx}">${escapeHtml(s.criteria || "")}</textarea></td>
       </tr>`
     )
     .join("");
+}
+
+function rubricToEditableHtml(r) {
+  const stepsRows = stepsToRowsHtml(r.steps || []);
 
   return `
     <div class="rubric-item" data-rubric-id="${r.rubric_id}">
@@ -277,6 +401,7 @@ function rubricToEditableHtml(r) {
           <div class="rubric-meta">axis: ${escapeHtml(r.axis_a_label)} ⇄ ${escapeHtml(r.axis_b_label)}</div>
         </div>
         <div>
+          <button class="button-link" data-action="flipSave">軸反転して保存</button>
           <button class="button-link" data-action="activate">Activate</button>
           <button class="button-link" data-action="save">保存（PATCH）</button>
         </div>
@@ -315,6 +440,7 @@ function escapeHtml(str) {
 }
 
 async function loadRubrics() {
+  if (!rubricListEl) return;
   if (!selectedTopic) return;
   rubricListEl.innerHTML = `<p class="muted">読み込み中...</p>`;
   try {
@@ -347,8 +473,20 @@ function collectRubricPayload(container) {
 }
 
 function wireRubricActions() {
+  if (!rubricListEl) return;
   rubricListEl.querySelectorAll(".rubric-item").forEach((el) => {
     const rubricId = el.dataset.rubricId;
+    el.querySelector('button[data-action="flipSave"]')?.addEventListener("click", async () => {
+      if (!confirm("軸を反転して保存します（-100⇄+100）。よろしいですか？")) return;
+      try {
+        const payload = collectRubricPayload(el);
+        const flipped = flipRubricPayload(payload);
+        await request(`/admin/rubrics/${encodeURIComponent(rubricId)}`, { method: "PATCH", body: flipped });
+        await loadRubrics();
+      } catch (e) {
+        alert(`反転保存失敗: ${e.message}`);
+      }
+    });
     el.querySelector('button[data-action="save"]').addEventListener("click", async () => {
       try {
         const payload = collectRubricPayload(el);
@@ -370,6 +508,7 @@ function wireRubricActions() {
 }
 
 async function generateRubric() {
+  if (!genTopicNameEl || !genStepsCountEl || !genDescEl) return;
   if (!selectedTopic) {
     alert("先にトピックを選択してください");
     return;
@@ -385,10 +524,19 @@ async function generateRubric() {
     steps_count: Number(genStepsCountEl.value || 5),
   };
   try {
-    await request(`/admin/topics/${encodeURIComponent(selectedTopic.topic_id)}/rubrics/generate`, {
+    const res = await request(`/admin/topics/${encodeURIComponent(selectedTopic.topic_id)}/rubrics/generate`, {
       method: "POST",
       body,
     });
+    if (genReverseAxisEl?.checked && res?.rubric?.rubric_id) {
+      const flipped = flipRubricPayload({
+        axis_a_label: res.rubric.axis_a_label,
+        axis_b_label: res.rubric.axis_b_label,
+        status: res.rubric.status,
+        steps: res.rubric.steps,
+      });
+      await request(`/admin/rubrics/${encodeURIComponent(res.rubric.rubric_id)}`, { method: "PATCH", body: flipped });
+    }
     await loadRubrics();
   } catch (e) {
     alert(`生成失敗: ${e.message}`);
@@ -396,6 +544,7 @@ async function generateRubric() {
 }
 
 function renderParties(parties) {
+  if (!partyListEl) return;
   if (!parties.length) {
     partyListEl.innerHTML = `<p class="muted">政党がありません。</p>`;
     return;
@@ -434,12 +583,12 @@ function renderParties(parties) {
 function selectParty(party) {
   selectedParty = party;
   if (selectedPartyIdEl) selectedPartyIdEl.textContent = party.party_id;
-  partyNameJaEl.value = party.name_ja || "";
-  partyHomeUrlEl.value = party.official_home_url || "";
-  partyDomainsEl.value = (party.allowed_domains || []).join(",");
-  partyConfidenceEl.value = party.confidence ?? 0;
-  partyStatusEl.value = party.status || "candidate";
-  partyEvidenceEl.value = JSON.stringify(party.evidence || {}, null, 2);
+  if (partyNameJaEl) partyNameJaEl.value = party.name_ja || "";
+  if (partyHomeUrlEl) partyHomeUrlEl.value = party.official_home_url || "";
+  if (partyDomainsEl) partyDomainsEl.value = (party.allowed_domains || []).join(",");
+  if (partyConfidenceEl) partyConfidenceEl.value = party.confidence ?? 0;
+  if (partyStatusEl) partyStatusEl.value = party.status || "candidate";
+  if (partyEvidenceEl) partyEvidenceEl.value = JSON.stringify(party.evidence || {}, null, 2);
   if (partyPolicyUrlsEl) partyPolicyUrlsEl.value = "";
   if (party && party.party_id) {
     request(`/admin/parties/${encodeURIComponent(party.party_id)}/policy-sources`)
@@ -456,16 +605,17 @@ function selectParty(party) {
 function clearPartyForm() {
   selectedParty = null;
   if (selectedPartyIdEl) selectedPartyIdEl.textContent = "(none)";
-  partyNameJaEl.value = "";
-  partyHomeUrlEl.value = "";
-  partyDomainsEl.value = "";
-  partyConfidenceEl.value = 0.5;
-  partyStatusEl.value = "candidate";
-  partyEvidenceEl.value = "";
+  if (partyNameJaEl) partyNameJaEl.value = "";
+  if (partyHomeUrlEl) partyHomeUrlEl.value = "";
+  if (partyDomainsEl) partyDomainsEl.value = "";
+  if (partyConfidenceEl) partyConfidenceEl.value = 0.5;
+  if (partyStatusEl) partyStatusEl.value = "candidate";
+  if (partyEvidenceEl) partyEvidenceEl.value = "";
   if (partyPolicyUrlsEl) partyPolicyUrlsEl.value = "";
 }
 
 function renderScores(run) {
+  if (!scoreResultEl) return;
   if (!run || !run.scores || !run.scores.length) {
     scoreResultEl.innerHTML = `<p class="muted">スコアがありません。スコアリング実行後も出ない場合は、(1) DBマイグレーションが未適用（\`alembic upgrade head\`）(2) 政党の \`official_home_url\` 未登録、の可能性があります。</p>`;
     return;
@@ -500,6 +650,8 @@ function renderScores(run) {
 
 
 async function runScoring() {
+  if (!scoreResultEl) return;
+  if (!scoreMaxEvidenceEl) return;
   if (!selectedTopic) {
     alert("先にトピックを選択してください");
     return;
@@ -516,12 +668,12 @@ async function runScoring() {
     }
     const body = {
       topic_text: selectedTopic.name,
-      search_provider: (searchProviderEl.value || "auto").trim(),
-      score_provider: (rubricProviderEl.value || "auto").trim(),
-      search_openai_model: (openaiSearchModelEl.value || "").trim() || null,
-      search_gemini_model: (geminiSearchModelEl.value || "").trim() || null,
-      score_openai_model: (openaiRubricModelEl.value || "").trim() || null,
-      score_gemini_model: (geminiRubricModelEl.value || "").trim() || null,
+      search_provider: (searchProviderEl?.value || "auto").trim(),
+      score_provider: (rubricProviderEl?.value || "auto").trim(),
+      search_openai_model: (openaiSearchModelEl?.value || "").trim() || null,
+      search_gemini_model: (geminiSearchModelEl?.value || "").trim() || null,
+      score_openai_model: (openaiRubricModelEl?.value || "").trim() || null,
+      score_gemini_model: (geminiRubricModelEl?.value || "").trim() || null,
       max_evidence_per_party: clampedEvidence,
       include_external: Boolean(scoreIncludeExternalEl && scoreIncludeExternalEl.checked),
       index_only: Boolean(scoreIndexOnlyEl && scoreIndexOnlyEl.checked),
@@ -537,6 +689,7 @@ async function runScoring() {
 }
 
 async function loadLatestScores() {
+  if (!scoreResultEl) return;
   if (!selectedTopic) return;
   scoreResultEl.innerHTML = `<p class="muted">読み込み中...</p>`;
   try {
@@ -548,6 +701,7 @@ async function loadLatestScores() {
 }
 
 async function loadParties() {
+  if (!partyListEl) return;
   partyListEl.innerHTML = `<p class="muted">読み込み中...</p>`;
   try {
     const parties = await request("/admin/parties");
@@ -565,6 +719,8 @@ async function loadParties() {
 }
 
 async function updateParty() {
+  if (!partyNameJaEl || !partyHomeUrlEl || !partyDomainsEl || !partyConfidenceEl || !partyStatusEl || !partyEvidenceEl)
+    return;
   if (!selectedParty) {
     alert("先に一覧から政党を選択してください");
     return;
@@ -615,6 +771,8 @@ async function updateParty() {
 }
 
 async function createParty() {
+  if (!partyNameJaEl || !partyHomeUrlEl || !partyDomainsEl || !partyConfidenceEl || !partyStatusEl || !partyEvidenceEl)
+    return;
   const name_ja = partyNameJaEl.value.trim();
   if (!name_ja) {
     alert("name_ja は必須です");
@@ -664,6 +822,7 @@ async function createParty() {
 }
 
 async function discoverParties() {
+  if (!partyDiscoverQueryEl || !partyDiscoverLimitEl) return;
   const query =
     (partyDiscoverQueryEl.value || "").trim() ||
     "日本の国政政党（国会に議席のある政党）と主要な新党・政治団体の公式サイト一覧 チームみらい";
@@ -674,9 +833,9 @@ async function discoverParties() {
       body: {
         query,
         limit,
-        provider: (searchProviderEl.value || "auto").trim(),
-        openai_model: (openaiSearchModelEl.value || "").trim() || null,
-        gemini_model: (geminiSearchModelEl.value || "").trim() || null,
+        provider: (searchProviderEl?.value || "auto").trim(),
+        openai_model: (openaiSearchModelEl?.value || "").trim() || null,
+        gemini_model: (geminiSearchModelEl?.value || "").trim() || null,
         dry_run: false,
       },
     });
@@ -707,34 +866,59 @@ async function purge(targets) {
   }
 }
 
-saveConfigBtn.addEventListener("click", () => {
+saveConfigBtn?.addEventListener("click", () => {
   const base = apiBaseEl.value.trim() || DEFAULT_API_BASE;
   const key = apiKeyEl.value.trim();
   setConfig(base, key);
   alert("API設定を保存しました");
 });
 
-saveLLMConfigBtn.addEventListener("click", () => {
+saveLLMConfigBtn?.addEventListener("click", () => {
   setConfigAdvanced({
-    searchProvider: (searchProviderEl.value || "auto").trim(),
-    rubricProvider: (rubricProviderEl.value || "auto").trim(),
-    openaiSearchModel: (openaiSearchModelEl.value || "").trim(),
-    geminiSearchModel: (geminiSearchModelEl.value || "").trim(),
-    openaiRubricModel: (openaiRubricModelEl.value || "").trim(),
-    geminiRubricModel: (geminiRubricModelEl.value || "").trim(),
+    searchProvider: (searchProviderEl?.value || "auto").trim(),
+    rubricProvider: (rubricProviderEl?.value || "auto").trim(),
+    openaiSearchModel: (openaiSearchModelEl?.value || "").trim(),
+    geminiSearchModel: (geminiSearchModelEl?.value || "").trim(),
+    openaiRubricModel: (openaiRubricModelEl?.value || "").trim(),
+    geminiRubricModel: (geminiRubricModelEl?.value || "").trim(),
   });
   alert("LLM設定を保存しました");
 });
 
-refreshTopicsBtn.addEventListener("click", loadTopics);
-upsertTopicBtn.addEventListener("click", upsertTopic);
-generateRubricBtn.addEventListener("click", generateRubric);
-refreshRubricsBtn.addEventListener("click", loadRubrics);
-refreshPartiesBtn.addEventListener("click", loadParties);
-createPartyBtn.addEventListener("click", createParty);
-updatePartyBtn.addEventListener("click", updateParty);
-clearPartyFormBtn.addEventListener("click", clearPartyForm);
-discoverPartiesBtn.addEventListener("click", discoverParties);
+refreshTopicsBtn?.addEventListener("click", loadTopics);
+upsertTopicBtn?.addEventListener("click", upsertTopic);
+generateRubricBtn?.addEventListener("click", generateRubric);
+refreshRubricsBtn?.addEventListener("click", loadRubrics);
+refreshPartiesBtn?.addEventListener("click", loadParties);
+createPartyBtn?.addEventListener("click", createParty);
+updatePartyBtn?.addEventListener("click", updateParty);
+clearPartyFormBtn?.addEventListener("click", clearPartyForm);
+discoverPartiesBtn?.addEventListener("click", discoverParties);
+savePolicySourcesBtn?.addEventListener("click", async () => {
+  if (!selectedParty) {
+    alert("先に一覧から政党を選択してください");
+    return;
+  }
+  if (!partyPolicyUrlsEl) {
+    alert("policy_base_urls の入力欄がありません");
+    return;
+  }
+  const base_urls = (partyPolicyUrlsEl.value || "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  try {
+    const resp = await request(`/admin/parties/${encodeURIComponent(selectedParty.party_id)}/policy-sources`, {
+      method: "PUT",
+      body: { base_urls },
+    });
+    const urls = (resp.sources || []).map((s) => s.base_url).filter(Boolean);
+    partyPolicyUrlsEl.value = urls.join("\n");
+    alert(`policy_base_urls を保存しました（${urls.length}件）`);
+  } catch (e) {
+    alert(`保存失敗: ${e.message}`);
+  }
+});
 crawlPolicySourcesBtn?.addEventListener("click", async () => {
   if (!selectedParty) {
     alert("先に一覧から政党を選択してください");
@@ -751,30 +935,193 @@ crawlPolicySourcesBtn?.addEventListener("click", async () => {
     alert(`クロール失敗: ${e.message}`);
   }
 });
-purgePartiesBtn.addEventListener("click", () => purge(["parties", "events"]));
-purgeTopicsBtn.addEventListener("click", () => purge(["topics"]));
+purgePartiesBtn?.addEventListener("click", () => purge(["parties", "events"]));
+purgeTopicsBtn?.addEventListener("click", () => purge(["topics"]));
 purgePolicyScoresBtn?.addEventListener("click", () => purge(["policy", "scores"]));
-purgeAllBtn.addEventListener("click", () => purge(["all"]));
-runScoringBtn.addEventListener("click", runScoring);
-loadLatestScoresBtn.addEventListener("click", loadLatestScores);
+purgeAllBtn?.addEventListener("click", () => purge(["all"]));
+runScoringBtn?.addEventListener("click", runScoring);
+loadLatestScoresBtn?.addEventListener("click", loadLatestScores);
 downloadSnapshotBtn?.addEventListener("click", () =>
   downloadSnapshot().catch((e) => alert(`ダウンロード失敗: ${e.message}`))
 );
 runSummaryBtn?.addEventListener("click", () => runPartySummaries());
 
-// init
-apiBaseEl.value = getApiBase();
-apiKeyEl.value = getApiKey();
-searchProviderEl.value = getSearchProvider();
-rubricProviderEl.value = getRubricProvider();
-openaiSearchModelEl.value = getModel("partyviz_admin_openai_search_model", "gpt-4o-mini-search-preview");
-geminiSearchModelEl.value = getModel("partyviz_admin_gemini_search_model", "models/gemini-2.5-flash");
-openaiRubricModelEl.value = getModel("partyviz_admin_openai_rubric_model", "gpt-5-mini");
-geminiRubricModelEl.value = getModel("partyviz_admin_gemini_rubric_model", "models/gemini-2.5-flash");
-clearPartyForm();
-loadTopics();
-loadParties();
+generateDeepResearchPromptBtn?.addEventListener("click", async () => {
+  if (!deepResearchPromptOutputEl) return;
+  if (!selectedParty) {
+    alert("先に政党を選択してください");
+    return;
+  }
+  try {
+    const topics = await request("/admin/topics");
+    const activeTopics = (topics || []).filter((t) => t && t.is_active !== false);
+    const officialHomeUrl = (selectedParty.official_home_url || "").trim();
+    const policyBaseUrls = partyPolicyUrlsEl ? _normalizeMultilineUrls(partyPolicyUrlsEl.value) : [];
+    const allowedDomains = Array.isArray(selectedParty.allowed_domains) ? selectedParty.allowed_domains : [];
+    const maxItemsPerTopic = Number(drMaxItemsPerTopicEl?.value || 2);
+    const prompt = _buildDeepResearchPromptAllTopics({
+      party: selectedParty,
+      topics: activeTopics,
+      allowedDomains,
+      policyBaseUrls,
+      officialHomeUrl,
+      maxItemsPerTopic,
+    });
+    deepResearchPromptOutputEl.value = prompt;
+  } catch (e) {
+    deepResearchPromptOutputEl.value = `生成失敗: ${e.message}`;
+  }
+});
 
-partyDiscoverQueryEl.value =
-  partyDiscoverQueryEl.value ||
-  "日本の国政政党（国会に議席のある政党）と主要な新党・政治団体の公式サイト一覧 チームみらい";
+copyDeepResearchPromptBtn?.addEventListener("click", async () => {
+  if (!deepResearchPromptOutputEl) return;
+  const text = deepResearchPromptOutputEl.value || "";
+  if (!text.trim()) {
+    alert("プロンプトが空です");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("コピーしました");
+  } catch {
+    // Fallback
+    deepResearchPromptOutputEl.focus();
+    deepResearchPromptOutputEl.select();
+    document.execCommand("copy");
+    alert("コピーしました");
+  }
+});
+
+importResearchPackBtn?.addEventListener("click", async () => {
+  if (!researchPackInputEl) return;
+  if (!importResearchPackResultEl) return;
+  const text = (researchPackInputEl.value || "").trim();
+  if (!text) {
+    alert("JSONを貼り付けてください");
+    return;
+  }
+  function parseJsonFromText(raw) {
+    const s = String(raw || "").trim();
+    if (!s) throw new Error("empty input");
+    const cleaned = s.replace(/^```(?:json)?\s*/i, "").replace(/```$/m, "").trim();
+    function extractObjectBlock(t) {
+      const start = t.indexOf("{");
+      const end = t.lastIndexOf("}");
+      if (start >= 0 && end > start) return t.slice(start, end + 1);
+      return "";
+    }
+    function repairJsonLikelyFromLLM(t) {
+      // LLM outputs sometimes include raw newlines inside JSON string literals.
+      // JSON requires newlines to be escaped as \\n inside strings.
+      let out = "";
+      let inStr = false;
+      let esc = false;
+      for (let i = 0; i < t.length; i++) {
+        const ch = t[i];
+        if (!inStr) {
+          if (ch === '"') inStr = true;
+          out += ch;
+          continue;
+        }
+        // in string
+        if (esc) {
+          out += ch;
+          esc = false;
+          continue;
+        }
+        if (ch === "\\") {
+          out += ch;
+          esc = true;
+          continue;
+        }
+        if (ch === '"') {
+          out += ch;
+          inStr = false;
+          continue;
+        }
+        if (ch === "\n") {
+          out += "\\n";
+          continue;
+        }
+        if (ch === "\r") {
+          out += "\\r";
+          continue;
+        }
+        if (ch === "\t") {
+          out += "\\t";
+          continue;
+        }
+        out += ch;
+      }
+      return out;
+    }
+
+    const attemptStrings = [];
+    attemptStrings.push(cleaned);
+    const block = extractObjectBlock(cleaned);
+    if (block) attemptStrings.push(block);
+    // Try repaired variants (for raw newlines in strings, etc.)
+    attemptStrings.push(repairJsonLikelyFromLLM(block || cleaned));
+
+    let lastErr = null;
+    for (const candidate of attemptStrings) {
+      if (!candidate) continue;
+      try {
+        return JSON.parse(candidate);
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (lastErr) throw lastErr;
+    throw new Error("no JSON object found");
+  }
+  let payload;
+  try {
+    payload = parseJsonFromText(text);
+  } catch (e) {
+    alert(`JSONのパースに失敗しました: ${e.message}`);
+    return;
+  }
+  importResearchPackResultEl.innerHTML = `<p class="muted">取り込み中...</p>`;
+  try {
+    const resp = await request("/admin/research/import", { method: "POST", body: payload });
+    const stats = resp?.stats || {};
+    const errors = Array.isArray(resp?.errors) ? resp.errors : [];
+    const errHtml = errors.length
+      ? `<details style="margin-top:8px;"><summary class="small">errors (${errors.length})</summary><pre class="small" style="white-space:pre-wrap; margin:8px 0 0;">${escapeHtml(JSON.stringify(errors, null, 2))}</pre></details>`
+      : "";
+    importResearchPackResultEl.innerHTML = `
+      <div class="rubric-item">
+        <div class="rubric-meta">parties: ${escapeHtml(stats.parties ?? "")}</div>
+        <div class="rubric-meta">items_total: ${escapeHtml(stats.items_total ?? "")}</div>
+        <div class="rubric-meta">documents_upserted: ${escapeHtml(stats.documents_upserted ?? "")}</div>
+        <div class="rubric-meta">documents_unchanged: ${escapeHtml(stats.documents_unchanged ?? "")}</div>
+        <div class="rubric-meta">chunks_written: ${escapeHtml(stats.chunks_written ?? "")}</div>
+        <div class="rubric-meta">skipped: ${escapeHtml(stats.skipped ?? "")}</div>
+      </div>
+      ${errHtml}
+    `;
+    alert("取り込みが完了しました");
+  } catch (e) {
+    importResearchPackResultEl.innerHTML = `<p class="muted">取り込み失敗: ${escapeHtml(e.message)}</p>`;
+  }
+});
+
+// init
+if (apiBaseEl) apiBaseEl.value = getApiBase();
+if (apiKeyEl) apiKeyEl.value = getApiKey();
+if (searchProviderEl) searchProviderEl.value = getSearchProvider();
+if (rubricProviderEl) rubricProviderEl.value = getRubricProvider();
+if (openaiSearchModelEl) openaiSearchModelEl.value = getModel("partyviz_admin_openai_search_model", "gpt-4o-mini-search-preview");
+if (geminiSearchModelEl) geminiSearchModelEl.value = getModel("partyviz_admin_gemini_search_model", "models/gemini-2.5-flash");
+if (openaiRubricModelEl) openaiRubricModelEl.value = getModel("partyviz_admin_openai_rubric_model", "gpt-5-mini");
+if (geminiRubricModelEl) geminiRubricModelEl.value = getModel("partyviz_admin_gemini_rubric_model", "models/gemini-2.5-flash");
+clearPartyForm();
+if (topicListEl) loadTopics();
+if (partyListEl) loadParties();
+
+if (partyDiscoverQueryEl) {
+  partyDiscoverQueryEl.value =
+    partyDiscoverQueryEl.value ||
+    "日本の国政政党（国会に議席のある政党）と主要な新党・政治団体の公式サイト一覧 チームみらい";
+}

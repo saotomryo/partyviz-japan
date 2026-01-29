@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PartyViz Admin - Misc</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .admin-grid { display: grid; grid-template-columns: 1fr; gap: 18px; padding: 22px 24px 40px; max-width: 1180px; margin: 0 auto; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .row > * { flex: 1; min-width: 220px; }
+    input, textarea {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      width: 100%;
+    }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); }
+    .divider { height: 1px; background: var(--border); margin: 14px 0; }
+    .small { font-size: 12px; color: var(--muted); }
+    .link { color: var(--accent-2); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <p class="eyebrow">PartyViz Admin</p>
+      <h1>その他管理</h1>
+      <p class="lede">政党要旨の再生成、公開用スナップショット出力など、横断的な操作をまとめます。</p>
+      <div class="controls">
+        <label>
+          API Base
+          <input id="apiBase" placeholder="http://localhost:8000" />
+        </label>
+        <label>
+          X-API-Key（任意）
+          <input id="apiKey" placeholder="admin-key（未設定なら空でOK）" />
+        </label>
+        <div style="align-self:flex-end;">
+          <button class="button-link" id="saveConfig">API設定を保存</button>
+          <a class="button-link link" href="admin.html" style="margin-left:8px; display:inline-block;">トピック管理へ</a>
+          <a class="button-link link" href="admin_parties.html" style="margin-left:8px; display:inline-block;">政党レジストリへ</a>
+          <a class="button-link link" href="admin_policy.html" style="margin-left:8px; display:inline-block;">政策処理へ</a>
+          <a class="button-link link" href="index.html" style="margin-left:8px; display:inline-block;">公開UIへ</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-grid">
+    <section class="card">
+      <h3 style="margin:0 0 8px;">政党要旨（相対評価）</h3>
+      <p class="small">最新スコアから政党要旨を再生成します（公開UIの要旨表示に反映）。</p>
+      <div class="row">
+        <label>scope
+          <select id="summaryScope">
+            <option value="official">official</option>
+            <option value="mixed">mixed</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="button-link" id="runSummary">要旨を再生成</button>
+      </div>
+      <div id="summaryResult" style="margin-top:10px;"></div>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 8px;">公開用スナップショット（静的ホスティング）</h3>
+      <p class="small">バックエンドを公開せず、公開UIが参照する <code>snapshot.json</code> をダウンロードします。</p>
+      <div class="row" style="margin-top:10px;">
+        <button class="button-link" id="downloadSnapshot">スナップショットをダウンロード</button>
+      </div>
+      <p class="small">ダウンロードしたファイルを <code>frontend/data/snapshot.json</code> として配置して公開UIを配信してください。</p>
+    </section>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>
+

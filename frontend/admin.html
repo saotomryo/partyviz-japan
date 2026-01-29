@@ -69,6 +69,9 @@
         </label>
         <div style="align-self:flex-end;">
           <button class="button-link" id="saveConfig">API設定を保存</button>
+          <a class="button-link link" href="admin_parties.html" style="margin-left:8px; display:inline-block;">政党レジストリへ</a>
+          <a class="button-link link" href="admin_policy.html" style="margin-left:8px; display:inline-block;">政策処理へ</a>
+          <a class="button-link link" href="admin_misc.html" style="margin-left:8px; display:inline-block;">その他管理へ</a>
           <a class="button-link link" href="index.html" style="margin-left:8px; display:inline-block;">公開UIへ</a>
         </div>
       </div>
@@ -156,7 +159,17 @@
         <label>axis_a_hint<input id="axisAHint" placeholder="積極財政（財政出動）" /></label>
         <label>axis_b_hint<input id="axisBHint" placeholder="規律重視（PB/債務抑制）" /></label>
       </div>
+      <p class="small" style="margin:8px 0 0;">
+        注意: ルーブリックの方向は全トピックで統一しています（-100側=axis_a / +100側=axis_b）。<br>
+        基準を逆にしたい場合は、生成後に「軸反転（-100⇄+100）」を使ってください。
+      </p>
       <label style="margin-top:10px;">description<textarea id="genDesc" placeholder="説明（任意）"></textarea></label>
+      <div class="row" style="margin-top:10px;">
+        <label style="min-width: 240px;">
+          <span class="small">軸反転（-100⇄+100）して保存</span>
+          <input id="genReverseAxis" type="checkbox" />
+        </label>
+      </div>
       <div class="row" style="margin-top:10px;">
         <button class="button-link" id="generateRubric">生成して保存（POST）</button>
         <button class="button-link" id="refreshRubrics">ルーブリック一覧更新</button>
@@ -190,81 +203,6 @@
       </div>
       <div id="scoreResult" style="margin-top:10px;"></div>
 
-      <div class="divider"></div>
-
-      <h3 style="margin:0 0 8px;">政党要旨（相対評価）</h3>
-      <p class="small">最新スコアから政党要旨を再生成します（公開UIの要旨表示に反映）。</p>
-      <div class="row">
-        <label>scope
-          <select id="summaryScope">
-            <option value="official">official</option>
-            <option value="mixed">mixed</option>
-          </select>
-        </label>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <button class="button-link" id="runSummary">要旨を再生成</button>
-      </div>
-      <div id="summaryResult" style="margin-top:10px;"></div>
-
-      <div class="divider"></div>
-
-      <h3 style="margin:0 0 8px;">公開用スナップショット（静的ホスティング）</h3>
-      <p class="small">バックエンドを公開せず、公開UIが参照する <code>snapshot.json</code> をダウンロードします。</p>
-      <div class="row" style="margin-top:10px;">
-        <button class="button-link" id="downloadSnapshot">スナップショットをダウンロード</button>
-      </div>
-      <p class="small">ダウンロードしたファイルを <code>frontend/data/snapshot.json</code> として配置して公開UIを配信してください。</p>
-
-      <div class="divider"></div>
-
-      <h3 style="margin:0 0 8px;">政党レジストリ</h3>
-      <div class="row">
-        <label>自動取得クエリ<input id="partyDiscoverQuery" placeholder="日本の国政政党（国会に議席のある政党）と主要な新党・政治団体の公式サイト一覧 チームみらい" /></label>
-        <label>limit<input id="partyDiscoverLimit" type="number" min="1" max="200" value="50" /></label>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <button class="button-link" id="discoverParties">自動取得して反映</button>
-      </div>
-      <div class="divider"></div>
-      <p class="small">下の一覧から政党をクリックすると編集できます。</p>
-      <div class="rubric-meta">選択中: <span id="selectedPartyId">(none)</span></div>
-      <div class="row">
-        <label>name_ja<input id="partyNameJa" placeholder="自由民主党" /></label>
-        <label>official_home_url<input id="partyHomeUrl" placeholder="https://www.jimin.jp/" /></label>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <label>allowed_domains（カンマ区切り）<input id="partyDomains" placeholder="www.jimin.jp,jimin.jp" /></label>
-        <label>confidence<input id="partyConfidence" type="number" min="0" max="1" step="0.01" value="0.5" /></label>
-        <label>status
-          <select id="partyStatus">
-            <option value="candidate">candidate</option>
-            <option value="verified">verified</option>
-            <option value="needs_review">needs_review</option>
-            <option value="rejected">rejected</option>
-          </select>
-        </label>
-      </div>
-      <label style="margin-top:10px;">policy_base_urls（改行区切り）<textarea id="partyPolicyUrls" placeholder="https://o-ishin.jp/policy/"></textarea></label>
-      <label style="margin-top:10px;">evidence（JSON）<textarea id="partyEvidence" placeholder='{"note":"seed"}'></textarea></label>
-      <div class="row" style="margin-top:10px;">
-        <button class="button-link" id="createParty">登録（POST）</button>
-        <button class="button-link" id="updateParty">更新（PATCH）</button>
-        <button class="button-link" id="clearPartyForm">フォームクリア</button>
-        <button class="button-link" id="refreshParties">一覧更新</button>
-        <button class="button-link" id="crawlPolicySources">政策URLをクロール</button>
-        <button class="button-link danger" id="purgePolicyScores" title="policy_documents/policy_chunks と score_runs/topic_scores を削除します（確認が必要）">政策/スコアだけ削除</button>
-      </div>
-      <div id="partyList" style="margin-top:10px;"></div>
-
-      <div class="divider"></div>
-      <h3 style="margin:0 0 8px;">メンテナンス（開発用）</h3>
-      <p class="small">危険: DBのデータを削除します。実行時に「DELETE」と入力が必要です。</p>
-      <div class="row" style="margin-top:10px;">
-        <button class="button-link" id="purgeParties">政党（+イベント）を全削除</button>
-        <button class="button-link" id="purgeTopics">トピック/ルーブリックを全削除</button>
-        <button class="button-link" id="purgeAll">すべて全削除</button>
-      </div>
     </section>
   </main>
 

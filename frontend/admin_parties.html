@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PartyViz Admin - Parties</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .admin-grid { display: grid; grid-template-columns: 360px 1fr; gap: 18px; padding: 22px 24px 40px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .row > * { flex: 1; min-width: 160px; }
+    input, textarea {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      width: 100%;
+    }
+    textarea { min-height: 84px; resize: vertical; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); }
+    .divider { height: 1px; background: var(--border); margin: 14px 0; }
+    .rubric-item { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+    .rubric-item header { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .rubric-item header h3 { margin: 0; font-size: 14px; }
+    .rubric-meta { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+    .small { font-size: 12px; color: var(--muted); }
+    .link { color: var(--accent-2); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content">
+      <p class="eyebrow">PartyViz Admin</p>
+      <h1>管理（政党レジストリ）</h1>
+      <p class="lede">政党の登録/更新（公式URL・ドメイン・ステータス等）を操作します。</p>
+      <div class="controls">
+        <label>
+          API Base
+          <input id="apiBase" placeholder="http://localhost:8000" />
+        </label>
+        <label>
+          X-API-Key（任意）
+          <input id="apiKey" placeholder="admin-key（未設定なら空でOK）" />
+        </label>
+        <label>
+          検索プロバイダ
+          <select id="searchProvider">
+            <option value="auto">auto</option>
+            <option value="gemini">gemini</option>
+            <option value="openai">openai</option>
+          </select>
+        </label>
+        <label>
+          OpenAI（検索）model
+          <input id="openaiSearchModel" list="openaiSearchModelList" placeholder="gpt-4o-mini-search-preview" />
+        </label>
+        <label>
+          Gemini（検索）model
+          <input id="geminiSearchModel" list="geminiSearchModelList" placeholder="models/gemini-2.5-flash" />
+        </label>
+        <div style="align-self:flex-end;">
+          <button class="button-link" id="saveConfig">API設定を保存</button>
+          <a class="button-link link" href="admin.html" style="margin-left:8px; display:inline-block;">トピック管理へ</a>
+          <a class="button-link link" href="admin_policy.html" style="margin-left:8px; display:inline-block;">政策処理へ</a>
+          <a class="button-link link" href="admin_misc.html" style="margin-left:8px; display:inline-block;">その他管理へ</a>
+          <a class="button-link link" href="index.html" style="margin-left:8px; display:inline-block;">公開UIへ</a>
+        </div>
+      </div>
+
+      <datalist id="openaiSearchModelList">
+        <option value="gpt-4o-mini-search-preview"></option>
+      </datalist>
+      <datalist id="geminiSearchModelList">
+        <option value="models/gemini-2.5-flash"></option>
+        <option value="models/gemini-2.5-pro"></option>
+        <option value="models/gemini-1.5-flash"></option>
+      </datalist>
+    </div>
+  </header>
+
+  <main class="admin-grid">
+    <aside class="panel">
+      <div class="panel__header">
+        <h2>政党一覧</h2>
+      </div>
+      <div style="padding: 12px;">
+        <div class="row">
+          <label>自動取得クエリ<input id="partyDiscoverQuery" placeholder="日本の国政政党（国会に議席のある政党）と主要な新党・政治団体の公式サイト一覧 チームみらい" /></label>
+          <label>limit<input id="partyDiscoverLimit" type="number" min="1" max="200" value="50" /></label>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="button-link" id="discoverParties">自動取得して反映</button>
+          <button class="button-link" id="refreshParties">一覧更新</button>
+        </div>
+        <div class="divider"></div>
+        <p class="small">下の一覧から政党をクリックすると編集できます。</p>
+        <div id="partyList" style="margin-top:10px;"></div>
+      </div>
+    </aside>
+
+    <section class="card">
+      <h3 style="margin:0 0 8px;">政党編集</h3>
+      <div class="rubric-meta">選択中: <span id="selectedPartyId">(none)</span></div>
+      <div class="row">
+        <label>name_ja<input id="partyNameJa" placeholder="自由民主党" /></label>
+        <label>official_home_url<input id="partyHomeUrl" placeholder="https://www.jimin.jp/" /></label>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <label>allowed_domains（カンマ区切り）<input id="partyDomains" placeholder="www.jimin.jp,jimin.jp" /></label>
+        <label>confidence<input id="partyConfidence" type="number" min="0" max="1" step="0.01" value="0.5" /></label>
+        <label>status
+          <select id="partyStatus">
+            <option value="candidate">candidate</option>
+            <option value="verified">verified</option>
+            <option value="needs_review">needs_review</option>
+            <option value="rejected">rejected</option>
+          </select>
+        </label>
+      </div>
+      <label style="margin-top:10px;">evidence（JSON）<textarea id="partyEvidence" placeholder='{"note":"seed"}'></textarea></label>
+      <div class="row" style="margin-top:10px;">
+        <button class="button-link" id="createParty">登録（POST）</button>
+        <button class="button-link" id="updateParty">更新（PATCH）</button>
+        <button class="button-link" id="clearPartyForm">フォームクリア</button>
+      </div>
+      <p class="small" style="margin-top:10px;">政策URLの登録・クロールは「政策処理へ」で行います。</p>
+    </section>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>
