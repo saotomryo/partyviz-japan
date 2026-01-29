@@ -336,7 +336,6 @@ function buildSummaryText({
   farParty,
   quote,
   topicCount,
-  fiscalNote,
 }) {
   const posPart = posTopics.slice(0, 2).join("・");
   const negPart = negTopics.slice(0, 1).join("・");
@@ -348,9 +347,8 @@ function buildSummaryText({
   if (nearParty && farParty) comp = `${nearParty}に近く、${farParty}とは差が大きい。`;
   else if (nearParty) comp = `${nearParty}に近い傾向。`;
   const extra = topicCount ? `対象${topicCount}件の相対評価。` : "";
-  const note = fiscalNote ? fiscalNote : "";
   const q = quote ? `根拠:「${quote}」` : "";
-  let text = `${lead}${comp}${extra}${note}${q}`;
+  let text = `${lead}${comp}${extra}${q}`;
   return text;
 }
 
@@ -440,19 +438,6 @@ async function getPartySummaries(scope) {
     const posTopics = posIds.map((tid) => topicById.get(tid)?.name).filter(Boolean);
     const negTopics = negIds.map((tid) => topicById.get(tid)?.name).filter(Boolean);
 
-    let fiscalNote = null;
-    const fiscalTid = posIds.concat(negIds).find((tid) => {
-      const name = topicById.get(tid)?.name || "";
-      return ["財政", "財政規律", "財政再建", "積極財政"].some((k) => name.includes(k));
-    });
-    if (fiscalTid) {
-      const z = zmap.get(fiscalTid);
-      if (typeof z === "number") {
-        if (z < 0) fiscalNote = "※財政はマイナス側=積極財政寄り。";
-        else if (z > 0) fiscalNote = "※財政はプラス側=規律重視寄り。";
-      }
-    }
-
     const dists = [];
     partyZ.forEach((other, pid) => {
       if (pid === party.entity_id) return;
@@ -481,7 +466,6 @@ async function getPartySummaries(scope) {
       farParty,
       quote,
       topicCount,
-      fiscalNote,
     });
 
     return {

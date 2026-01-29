@@ -168,21 +168,6 @@ def build_party_summaries(
         pos_topics = [topic_by_id[tid].name for tid in pos_ids if tid in topic_by_id]
         neg_topics = [topic_by_id[tid].name for tid in neg_ids if tid in topic_by_id]
 
-        fiscal_note = None
-        fiscal_topic_id = None
-        for tid in list(pos_ids) + list(neg_ids):
-            name = topic_by_id.get(tid).name if tid in topic_by_id else ""
-            if any(k in name for k in ["財政", "財政規律", "財政再建", "積極財政"]):
-                fiscal_topic_id = tid
-                break
-        if fiscal_topic_id:
-            z = z_map.get(fiscal_topic_id)
-            if z is not None:
-                if z < 0:
-                    fiscal_note = "※財政はマイナス側=積極財政寄り。"
-                elif z > 0:
-                    fiscal_note = "※財政はプラス側=規律重視寄り。"
-
         # nearest/farthest
         near_party = None
         far_party = None
@@ -213,7 +198,7 @@ def build_party_summaries(
             far_party=far_party,
             quote=quote,
             topic_count=len(party_scores.get(party.party_id, {})),
-            fiscal_note=fiscal_note,
+            fiscal_note=None,
         )
 
         summaries.append(
